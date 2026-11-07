@@ -1,0 +1,65 @@
+@import "tailwindcss";
+
+/*
+ * Design tokens.
+ * Every colour and font used by the UI is defined here once, so a rebrand is a
+ * one-file change. Use them through Tailwind utilities, e.g. `bg-surface`,
+ * `text-ink-muted`, `border-line`, `font-display`.
+ */
+@theme {
+  /* Surfaces */
+  --color-canvas: #f6f7f5;
+  --color-surface: #ffffff;
+  --color-subtle: #fbfbfa;
+  --color-muted: #eef0ed;
+
+  /* Borders */
+  --color-line: #e3e5e1;
+  --color-line-strong: #d5d8d3;
+  --color-line-stronger: #c9cdc7;
+
+  /* Text */
+  --color-ink: #15171a;
+  --color-ink-muted: #5b616b;
+  --color-ink-faint: #646a73;
+  --color-ink-body: #3e434a;
+
+  /* Brand accent (teal) */
+  --color-accent: #0f766e;
+  --color-accent-strong: #0b5b55;
+  --color-accent-soft: #e6f2f0;
+  --color-accent-tint: #f3f8f7;
+
+  /* Highlighted evidence */
+  --color-highlight: #fcebc4;
+  --color-highlight-edge: #b45309;
+
+  /* Status */
+  --color-success: #1f7a3f;
+  --color-success-strong: #1f5f38;
+  --color-success-soft: #e7f3ea;
+  --color-danger: #b42318;
+  --color-danger-soft: #fef6f5;
+  --color-danger-line: #f1c7c1;
+  --color-warning: #b45309;
+  --color-warning-strong: #7a3e06;
+  --color-warning-soft: #fffbf3;
+
+  /* Typography (self-hosted via @fontsource, see app/layout.tsx) */
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Space Grotesk Variable", "Inter Variable", ui-sans-serif, sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, monospace;
+}
+
+@layer base {
+  html {
+    background-color: var(--color-canvas);
+    color: var(--color-ink);
+  }
+
+  /* One visible focus style for every interactive element. */
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+}
