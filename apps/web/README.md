@@ -22,7 +22,7 @@ To use the real backend, copy `.env.example` to `.env.local` and set `NEXT_PUBLI
 | `npm run test`       | Unit and component tests (Vitest + Testing Library)           |
 | `npm run test:watch` | Tests in watch mode                                           |
 | `npm run lint`       | ESLint                                                        |
-| `npm run typecheck`  | TypeScript, no output                                         |
+| `npm run typecheck`  | Generates Next.js route types, then runs TypeScript           |
 | `npm run format`     | Format every file with Prettier (also sorts Tailwind classes) |
 | `npm run check`      | Lint + typecheck + tests + format check, as run in CI         |
 
