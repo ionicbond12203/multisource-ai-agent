@@ -3,7 +3,7 @@ Postgres + pgvector tests. Skipped unless TEST_DATABASE_URL points at a
 database you don't mind being written to (CI starts a throwaway one):
 
     docker compose up -d db
-    TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/postgres uv run pytest
+    TEST_DATABASE_URL=postgresql://postgres@localhost:5432/postgres uv run pytest
 
 Never point this at the Supabase project the demo uses.
 """
