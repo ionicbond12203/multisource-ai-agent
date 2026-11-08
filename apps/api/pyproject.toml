@@ -45,6 +45,8 @@ ignore = ["E501"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Lets tests import the evaluation package in evals/.
+pythonpath = ["."]
 addopts = "-q"
 # The Google SDK ships a docstring with an invalid escape; not our code.
 filterwarnings = ["ignore::SyntaxWarning"]

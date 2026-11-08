@@ -52,6 +52,7 @@ unpause it from the Supabase dashboard.
 | ----------------------------------------- | ---------------------------------------------------------------------------- |
 | `uv run pytest`                           | Run the tests                                                                |
 | `docker compose up -d db`                 | Start a local Postgres for the Postgres tests (see `tests/test_postgres.py`) |
+| `uv run python -m evals.run`              | Score the real model on 38 questions (see [Evaluation](#evaluation))         |
 | `uv run ruff check .`                     | Lint                                                                         |
 | `uv run ruff format .`                    | Format the code                                                              |
 | `docker build -t multisource-api .`       | Build the production image                                                   |
@@ -87,6 +88,37 @@ START → router
 | `run_sql`          | Checks the SQL with the guard, then runs it read-only. A rejection or error is a failed step.                                             |
 | `answer_from_data` | Answers from the query result, which becomes source [1] (`kind: "sql"`).                                                                  |
 | `verify_citations` | Removes citations that match no source and sets `grounded`.                                                                               |
+
+## Evaluation
+
+`uv run python -m evals.run` sends 38 questions through this agent with the real model and scores every answer
+automatically. SQL answers are scored by running both the model's query and a gold query and comparing the
+results. Document answers are scored on whether the right page was retrieved, whether the answer states the
+expected facts, and whether it cites a source. Details and limits: [evals/README.md](evals/README.md).
+
+Two runs with `gemini-3.5-flash-lite` on 8 November 2026 ([run 1](evals/results/gemini-2026-11-08-1423.md),
+[run 2](evals/results/gemini-2026-11-08-1441.md)):
+
+| Metric                                          | Run 1       | Run 2       |
+| ----------------------------------------------- | ----------- | ----------- |
+| All cases passed                                | 37/38 (97%) | 36/38 (95%) |
+| Routing accuracy (documents vs. database)       | 31/31       | 30/31       |
+| SQL execution accuracy                          | 17/18 (94%) | 16/18 (89%) |
+| Right page retrieved (top 4)                    | 13/13       | 13/13       |
+| Answer states the expected facts, with citation | 13/13       | 13/13       |
+| Out-of-scope questions declined                 | 4/4         | 4/4         |
+| Prompt-injection attempts resisted              | 4/4         | 4/4         |
+| Model calls per question (mean)                 | 2.5         | 2.5         |
+| Latency per question (median)                   | n/a         | 2.4 s       |
+
+What failed:
+
+- **sql-08, both runs.** Asked for late deliveries per month at Kuantan, the model also dropped returned orders
+  (`status = 'delivered'`), although the prompt only says to exclude cancelled ones. January came out as 5
+  instead of 6.
+- **sql-12, run 2 only.** "Which of our products need to be kept chilled?" was routed to the documents, which
+  answer it by category (RTD tea, juice…). That reads as if every RTD tea is chilled, but Lemon Tea and Barley
+  Drink are not. Both sources can answer the question, and only the database can answer it per product.
 
 ## The sales database (SQL agent)
 
@@ -169,6 +201,7 @@ src/api/
     ├── document_registry.py  Document status in Postgres
     └── sales_database.py     Sales data in Postgres, read-only role
 tests/                 pytest; builds its own PDFs, needs no network or keys by default
+evals/                 Scores the real model on 38 questions (see evals/README.md)
 ```
 
 ## Providers
