@@ -1,8 +1,11 @@
+from dataclasses import replace
+
 from fastapi.testclient import TestClient
 
 from api.config import Settings
 from api.main import create_app
-from api.sales.database import DuckDbSalesDatabase
+from api.sales.catalog import SalesCatalog
+from api.sales.database import DuckDbSalesDatabase, QueryFailed
 from api.sales.guard import check_sql
 from api.sales.schema import TABLES
 
@@ -100,3 +103,22 @@ def test_described_columns_match_the_real_tables():
 def test_table_list_is_cached(client):
     catalog = client.app.state.services.sales_catalog
     assert catalog.describe() is catalog.describe()
+
+
+class BrokenDatabase:
+    def run(self, sql):
+        raise QueryFailed("consuming input failed: server closed the connection unexpectedly")
+
+
+def test_database_failure_is_a_clear_503_not_a_crash(settings):
+    app = create_app(settings)
+    services = app.state.services
+    app.state.services = replace(services, sales_catalog=SalesCatalog(BrokenDatabase()))
+    client = TestClient(app)
+
+    for url in ("/sales/tables", "/sales/tables/orders/rows"):
+        response = client.get(url, headers={"Origin": "http://localhost:3000"})
+        assert response.status_code == 503
+        assert response.json()["detail"] == "The database didn't answer. Try again in a moment."
+        # Handled errors keep CORS headers, so the browser shows the message instead of a CORS error.
+        assert response.headers["access-control-allow-origin"] == "http://localhost:3000"

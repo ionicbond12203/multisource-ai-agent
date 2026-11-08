@@ -26,6 +26,14 @@ def create_pool(database_url: str) -> ConnectionPool:
         max_size=5,
         open=True,
         configure=_configure,
+        # Supabase's pooler closes connections that sit idle. Without these, the
+        # pool would hand out a dead connection and the request would fail with
+        # "server closed the connection unexpectedly":
+        # - check: test each connection before lending it, replacing broken ones
+        # - max_idle / max_lifetime: retire connections before the server drops them
+        check=ConnectionPool.check_connection,
+        max_idle=120,
+        max_lifetime=15 * 60,
         # Transaction poolers (e.g. Supabase port 6543) don't support prepared statements.
         kwargs={"prepare_threshold": None},
     )
