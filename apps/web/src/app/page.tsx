@@ -14,7 +14,8 @@ export default function WorkspacePage() {
       <WorkspaceShell
         // Without a backend, show the sample conversation; with one, start empty.
         initialState={isUsingMockApi ? createDemoWorkspaceState() : createEmptyWorkspaceState()}
-        suggestedQuestions={mockSuggestedQuestions}
+        // Sample questions only make sense for the sample files.
+        suggestedQuestions={isUsingMockApi ? mockSuggestedQuestions : []}
       />
     </>
   );

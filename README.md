@@ -5,10 +5,10 @@ the passage it came from.
 
 ## Repository layout
 
-| Path        | What                                                     | Status      |
-| ----------- | -------------------------------------------------------- | ----------- |
-| `apps/web`  | Next.js frontend (see [apps/web/README.md](apps/web/README.md)) | Workspace page built |
-| `apps/api`  | FastAPI + LangGraph backend                              | Planned     |
+| Path       | What                                                                       | Status                           |
+| ---------- | -------------------------------------------------------------------------- | -------------------------------- |
+| `apps/web` | Next.js frontend (see [apps/web/README.md](apps/web/README.md))            | Workspace page built             |
+| `apps/api` | FastAPI + LangGraph backend (see [apps/api/README.md](apps/api/README.md)) | Document Q&A with offline models |
 
 ## Run the frontend
 
@@ -20,6 +20,16 @@ npm run dev
 
 Without a backend it uses built-in sample data, so it works on its own.
 
+## Run the backend
+
+```bash
+cd apps/api
+uv sync
+uv run uvicorn api.main:app --reload
+```
+
+Then set `NEXT_PUBLIC_API_URL=http://localhost:8000` in `apps/web/.env.local` and restart the frontend.
+
 ## Deploy the frontend to Vercel
 
 1. Import this repository in Vercel.
@@ -29,4 +39,5 @@ Without a backend it uses built-in sample data, so it works on its own.
 ## CI
 
 `.github/workflows/web-ci.yml` runs lint, type-check, tests, the format check and a production build on every pull
-request that touches `apps/web`.
+request that touches `apps/web`. `.github/workflows/api-ci.yml` runs lint, the format check, tests and a Docker
+build on every pull request that touches `apps/api`.
