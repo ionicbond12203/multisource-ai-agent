@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     chunk_size: int = Field(default=1200, ge=200)
     chunk_overlap: int = Field(default=200, ge=0)
 
+    # Sales database (SQL agent): row cap added to every query, and the query timeout.
+    sql_max_rows: int = Field(default=200, ge=1, le=1000)
+    sql_timeout_s: float = Field(default=5.0, gt=0, le=30)
+
     # Retrieval
     top_k: int = Field(default=4, ge=1, le=20)
     # Chunks scoring below this are treated as "not found in your files".

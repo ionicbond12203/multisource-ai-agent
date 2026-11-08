@@ -21,6 +21,8 @@ from api.main import create_app
 from api.postgres import create_pool
 from api.postgres.document_registry import INTERRUPTED, PostgresDocumentRegistry
 from api.postgres.vector_store import PostgresVectorStore
+from api.sales.database import QueryFailed
+from api.sales.guard import check_sql
 from api.schemas import Processing, Ready
 from api.store.base import Chunk
 
@@ -105,3 +107,25 @@ def test_full_flow_through_the_api():
         ).json()
         assert body["grounded"] is True
         assert body["sources"][0]["location"] == "Page 2 of 2"
+
+
+def test_sales_database_answers_queries(pool):
+    from api.postgres.sales_database import PostgresSalesDatabase
+
+    db = PostgresSalesDatabase(pool)
+    result = db.run(check_sql("select count(*) as orders from orders", max_rows=10))
+    assert result.columns == ["orders"]
+    assert result.rows[0][0] > 1000
+
+
+def test_sales_reader_role_blocks_writes_and_other_tables(pool):
+    """Defence in depth: these skip check_sql on purpose and must still fail in the database."""
+    from api.postgres.sales_database import PostgresSalesDatabase
+
+    db = PostgresSalesDatabase(pool)
+    with pytest.raises(QueryFailed, match="read-only"):
+        db.run("delete from orders")
+    with pytest.raises(QueryFailed, match="permission denied"):
+        db.run("select * from public.documents")
+    with pytest.raises(QueryFailed, match="longer than"):
+        PostgresSalesDatabase(pool, timeout_s=0.2).run("select pg_sleep(2)")

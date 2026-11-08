@@ -5,10 +5,10 @@ the passage it came from.
 
 ## Repository layout
 
-| Path       | What                                                                       | Status                           |
-| ---------- | -------------------------------------------------------------------------- | -------------------------------- |
-| `apps/web` | Next.js frontend (see [apps/web/README.md](apps/web/README.md))            | Workspace page built             |
-| `apps/api` | FastAPI + LangGraph backend (see [apps/api/README.md](apps/api/README.md)) | Document Q&A with offline models |
+| Path       | What                                                                       | Status                   |
+| ---------- | -------------------------------------------------------------------------- | ------------------------ |
+| `apps/web` | Next.js frontend (see [apps/web/README.md](apps/web/README.md))            | Workspace page built     |
+| `apps/api` | FastAPI + LangGraph backend (see [apps/api/README.md](apps/api/README.md)) | Document Q&A + SQL agent |
 
 ## Run the frontend
 

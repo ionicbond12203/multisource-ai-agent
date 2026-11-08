@@ -18,6 +18,7 @@ from api.graph.build import ChatAgent
 from api.ingestion.pipeline import IngestionPipeline
 from api.ingestion.registry import DocumentRegistry, InMemoryDocumentRegistry
 from api.providers import build_providers
+from api.sales.database import DuckDbSalesDatabase, SalesDatabase
 from api.store.base import VectorStore
 from api.store.memory import InMemoryVectorStore
 
@@ -32,6 +33,7 @@ class Services:
     settings: Settings
     registry: DocumentRegistry
     store: VectorStore
+    sales_db: SalesDatabase
     pipeline: IngestionPipeline
     agent: ChatAgent
     pool: ConnectionPool | None = None
@@ -44,14 +46,25 @@ class Services:
 def build_services(settings: Settings) -> Services:
     embedder, chat_model = build_providers(settings)
     registry, store, pool = _build_storage(settings)
+    sales_db = _build_sales_db(settings, pool)
     return Services(
         settings=settings,
         registry=registry,
         store=store,
+        sales_db=sales_db,
         pipeline=IngestionPipeline(settings, registry, embedder, store),
-        agent=ChatAgent(settings, embedder, chat_model, store),
+        agent=ChatAgent(settings, embedder, chat_model, store, sales_db),
         pool=pool,
     )
+
+
+def _build_sales_db(settings: Settings, pool: ConnectionPool | None) -> SalesDatabase:
+    """The sales data lives next to the documents: Postgres if configured, else an embedded DuckDB file."""
+    if pool is None:
+        return DuckDbSalesDatabase(settings.sql_timeout_s)
+    from api.postgres.sales_database import PostgresSalesDatabase
+
+    return PostgresSalesDatabase(pool, settings.sql_timeout_s)
 
 
 def _build_storage(settings: Settings) -> tuple[DocumentRegistry, VectorStore, ConnectionPool | None]:

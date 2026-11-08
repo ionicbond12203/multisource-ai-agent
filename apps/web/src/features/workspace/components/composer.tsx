@@ -46,7 +46,7 @@ export function Composer({ onSend, onAttach, usableFileCount, disabled = false }
         value={text}
         onChange={(event) => setText(event.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder="Ask about your documents…"
+        placeholder="Ask about your documents or the sales data…"
         className="w-full resize-none bg-transparent text-[15px] outline-none placeholder:text-ink-faint"
       />
       <div className="flex flex-wrap items-center gap-2">

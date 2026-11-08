@@ -1,4 +1,5 @@
 import { AppHeader } from "@/components/app-header";
+import { siteConfig } from "@/config/site";
 import {
   WorkspaceShell,
   createDemoWorkspaceState,
@@ -14,8 +15,8 @@ export default function WorkspacePage() {
       <WorkspaceShell
         // Without a backend, show the sample conversation; with one, start empty.
         initialState={isUsingMockApi ? createDemoWorkspaceState() : createEmptyWorkspaceState()}
-        // Sample questions only make sense for the sample files.
-        suggestedQuestions={isUsingMockApi ? mockSuggestedQuestions : []}
+        // Sample-file questions for the demo; with a backend, questions about its sales database.
+        suggestedQuestions={isUsingMockApi ? mockSuggestedQuestions : [...siteConfig.salesQuestions]}
       />
     </>
   );

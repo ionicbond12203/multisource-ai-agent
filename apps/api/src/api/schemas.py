@@ -80,6 +80,8 @@ class SourcePassage(CamelModel):
 
 
 class Source(CamelModel):
+    # "document": passages from an uploaded file. "sql": the query and its result table.
+    kind: Literal["document", "sql"] = "document"
     index: int
     file_id: str
     file_name: str

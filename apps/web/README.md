@@ -130,6 +130,8 @@ JSON uses camelCase (in FastAPI: Pydantic `alias_generator=to_camel`). Full type
       "location": "Section 4.2 · page 7 of 18",
       "heading": "4.2 Last-mile temperature control",
       "score": 0.91,
+      // optional: "document" (default) or "sql", where passages are [query, result table]
+      "kind": "document",
       "passages": [{ "text": "…", "cited": true }],
     },
   ],
