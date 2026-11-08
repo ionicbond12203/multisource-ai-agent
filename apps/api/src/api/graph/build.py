@@ -1,9 +1,9 @@
 """
 Wires the nodes into a LangGraph graph and runs it for one question.
 
-    START → router ─┬─ rag ──→ retrieve ─┬─ found ───→ answer → verify_citations → END
-                    │                    └─ nothing ─→ END
-                    └─ none ─→ END
+    START → router ─┬─ first question ──────────────→ retrieve ─┬─ found ───→ answer → verify_citations → END
+                    ├─ follow-up ─→ rewrite_query ──↗           └─ nothing ─→ END
+                    └─ no files ──→ END
 """
 
 import time
@@ -34,12 +34,18 @@ class ChatAgent:
 
         graph = StateGraph(ChatState)
         graph.add_node("router", _traced("router", nodes.router))
+        graph.add_node("rewrite_query", _traced("rewrite_query", nodes.rewrite_query))
         graph.add_node("retrieve", _traced("retrieve", nodes.retrieve))
         graph.add_node("answer", _traced("answer", nodes.answer))
         graph.add_node("verify_citations", _traced("verify_citations", nodes.verify_citations))
 
         graph.add_edge(START, "router")
-        graph.add_conditional_edges("router", lambda s: s["route"], {"rag": "retrieve", "none": END})
+        graph.add_conditional_edges(
+            "router",
+            _after_router,
+            {"rewrite": "rewrite_query", "retrieve": "retrieve", "none": END},
+        )
+        graph.add_edge("rewrite_query", "retrieve")
         graph.add_conditional_edges(
             "retrieve",
             lambda s: "found" if s["retrieved"] else "nothing",
@@ -74,6 +80,12 @@ class ChatAgent:
             follow_ups=[],
             run=AgentRun(steps=result["steps"], total_ms=total_ms),
         )
+
+
+def _after_router(state: ChatState) -> str:
+    if state["route"] == "none":
+        return "none"
+    return "rewrite" if state.get("history") else "retrieve"
 
 
 def _traced(name: str, node: Callable[[ChatState], NodeResult]) -> Callable[[ChatState], dict[str, object]]:
