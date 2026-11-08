@@ -2,12 +2,14 @@
 Keeps track of uploaded documents and their processing status.
 
 The frontend polls GET /documents/{id} and shows whatever status is stored
-here. In-memory for now; step 2 moves it to Postgres so it survives restarts.
+here. `InMemoryDocumentRegistry` is used without a database;
+`api.postgres.document_registry` stores the same records in Postgres.
 """
 
 import threading
 import uuid
 from dataclasses import dataclass, replace
+from typing import Protocol
 
 from api.schemas import FileStatus
 
@@ -23,13 +25,29 @@ class DocumentNotFound(KeyError):
     pass
 
 
-class DocumentRegistry:
+class DocumentRegistry(Protocol):
+    def create(self, name: str, status: FileStatus) -> DocumentRecord: ...
+
+    def get(self, document_id: str) -> DocumentRecord:
+        """Raises DocumentNotFound."""
+        ...
+
+    def set_status(self, document_id: str, status: FileStatus) -> DocumentRecord:
+        """Raises DocumentNotFound."""
+        ...
+
+
+def new_document_id() -> str:
+    return f"doc_{uuid.uuid4().hex[:12]}"
+
+
+class InMemoryDocumentRegistry:
     def __init__(self) -> None:
         self._records: dict[str, DocumentRecord] = {}
         self._lock = threading.Lock()
 
     def create(self, name: str, status: FileStatus) -> DocumentRecord:
-        record = DocumentRecord(id=f"doc_{uuid.uuid4().hex[:12]}", name=name, status=status)
+        record = DocumentRecord(id=new_document_id(), name=name, status=status)
         with self._lock:
             self._records[record.id] = record
         return record

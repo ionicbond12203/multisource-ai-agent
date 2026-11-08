@@ -25,6 +25,15 @@ SOURCE_HEADER_PATTERN = re.compile(r"^\[(\d+)\] [^\n]*$", re.MULTILINE)
 
 MAX_HISTORY_TURNS = 6
 
+REWRITE_SYSTEM_PROMPT = """\
+Rewrite the user's follow-up question as one standalone question that can be understood without the
+conversation. Replace words like "it", "that" or "they" with what they refer to. Keep the user's language.
+If the question already stands on its own, return it unchanged.
+Reply with the question only, no quotes or explanation."""
+
+PREVIOUS_QUESTION_LABEL = "Previous question:"
+FOLLOW_UP_LABEL = "Follow-up question:"
+
 
 def build_answer_prompt(
     question: str,
@@ -36,11 +45,8 @@ def build_answer_prompt(
     `sources` is (citation number, location label, chunk) triples.
     """
     parts: list[str] = []
-
-    recent = history[-MAX_HISTORY_TURNS:]
-    if recent:
-        lines = [f"{'User' if role == 'user' else 'Assistant'}: {content}" for role, content in recent]
-        parts.append("Conversation so far:\n" + "\n".join(lines))
+    if conversation := _format_history(history):
+        parts.append(conversation)
 
     blocks = [
         f"[{number}] {scored.chunk.file_name} · {location}\n{scored.chunk.text}"
@@ -50,3 +56,20 @@ def build_answer_prompt(
 
     parts.append(f"{QUESTION_LABEL} {question}")
     return "\n\n".join(parts)
+
+
+def build_rewrite_prompt(question: str, history: Sequence[tuple[str, str]]) -> str:
+    previous = [content for role, content in history if role == "user"]
+    lines = [_format_history(history)]
+    if previous:
+        lines.append(f"{PREVIOUS_QUESTION_LABEL} {previous[-1]}")
+    lines.append(f"{FOLLOW_UP_LABEL} {question}")
+    return "\n\n".join(line for line in lines if line)
+
+
+def _format_history(history: Sequence[tuple[str, str]]) -> str:
+    recent = history[-MAX_HISTORY_TURNS:]
+    if not recent:
+        return ""
+    lines = [f"{'User' if role == 'user' else 'Assistant'}: {content}" for role, content in recent]
+    return "Conversation so far:\n" + "\n".join(lines)

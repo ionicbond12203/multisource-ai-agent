@@ -1,9 +1,13 @@
+from dataclasses import replace
+
 from fastapi.testclient import TestClient
 from helpers import upload
 from pdf_factory import make_pdf
 
 from api.config import Settings
+from api.ingestion.pipeline import IngestionPipeline
 from api.main import create_app
+from api.providers.base import ProviderRateLimited
 
 
 def test_pdf_is_processed_until_ready(client):
@@ -66,3 +70,25 @@ def test_ocr_reports_it_is_not_available_yet(client):
     assert response.status_code == 200
     assert response.json()["status"]["kind"] == "failed"
     assert "OCR isn't available" in response.json()["status"]["reason"]
+
+
+class QuotaExhaustedEmbedder:
+    def embed_documents(self, texts):
+        raise ProviderRateLimited("The free AI quota is used up for the moment.")
+
+    def embed_query(self, text):
+        raise ProviderRateLimited("The free AI quota is used up for the moment.")
+
+
+def test_provider_quota_error_fails_with_retry(settings):
+    app = create_app(settings)
+    services = app.state.services
+    pipeline = IngestionPipeline(settings, services.registry, QuotaExhaustedEmbedder(), services.store)
+    app.state.services = replace(services, pipeline=pipeline)
+
+    status = upload(TestClient(app), "notes.txt", b"Drivers log temperatures every hour.")["status"]
+    assert status == {
+        "kind": "failed",
+        "reason": "The free AI quota is used up for the moment.",
+        "recovery": "retry",
+    }

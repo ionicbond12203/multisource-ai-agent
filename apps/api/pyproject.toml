@@ -6,7 +6,11 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "fastapi>=0.162.2",
+    "google-genai>=3.0.0",
     "langgraph>=1.2.20",
+    "pgvector>=0.5.1",
+    "psycopg-pool>=3.3.3",
+    "psycopg[binary]>=3.3.8",
     "pydantic>=2.14.3",
     "pydantic-settings>=2.16.2",
     "pypdf>=7.0.0",
@@ -40,3 +44,5 @@ ignore = ["E501"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+# The Google SDK ships a docstring with an invalid escape; not our code.
+filterwarnings = ["ignore::SyntaxWarning"]

@@ -17,6 +17,7 @@ class ChatState(TypedDict, total=False):
 
     # Filled in by the nodes
     route: Route
+    search_query: str  # standalone version of a follow-up question
     retrieved: list[ScoredChunk]
     answer: str
     sources: list[Source]

@@ -6,6 +6,8 @@ API docs:     http://localhost:8000/docs
 """
 
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,8 +21,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
-    app = FastAPI(title="Multisource AI Agent API", version="0.1.0")
-    app.state.services = build_services(settings)
+    services = build_services(settings)
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        yield
+        services.close()  # release database connections on shutdown
+
+    app = FastAPI(title="Multisource AI Agent API", version="0.2.0", lifespan=lifespan)
+    app.state.services = services
 
     # The browser calls this API directly from the frontend's origin.
     app.add_middleware(
