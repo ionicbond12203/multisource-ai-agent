@@ -16,6 +16,7 @@ export const siteConfig = {
     { label: "Agents", href: "/agents", available: false },
     { label: "Evaluations", href: "/evaluations", available: false },
     { label: "How it works", href: "/how-it-works", available: false },
+    { label: "SQL database", href: "/sql-database", available: true },
   ],
 
   /**

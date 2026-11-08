@@ -137,7 +137,8 @@ src/api/
 ├── services.py        Builds and wires every component; the one place to swap implementations
 ├── routes/
 │   ├── chat.py        POST /chat
-│   └── documents.py   POST /documents, GET /documents/{id}, POST /documents/{id}/ocr
+│   ├── documents.py   POST /documents, GET /documents/{id}, POST /documents/{id}/ocr
+│   └── sales.py       GET /sales/tables: tables, columns and first rows, for the SQL database page
 ├── ingestion/
 │   ├── extract.py     File → text per page
 │   ├── chunking.py    Text → overlapping chunks, each within one page
@@ -157,6 +158,7 @@ src/api/
 │   ├── schema.py      Tables, whitelist and the description the model sees
 │   ├── data.py        Deterministic sample data
 │   ├── guard.py       SQL checks (the security boundary)
+│   ├── catalog.py     Table descriptions + first rows for GET /sales/tables (cached)
 │   └── database.py    SalesDatabase interface + offline DuckDB version
 ├── store/
 │   ├── base.py        VectorStore interface

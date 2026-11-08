@@ -113,7 +113,7 @@ export function ChatPanel({
         )}
         <Composer onSend={onSend} onAttach={onAttach} usableFileCount={usableFileCount} disabled={pending} />
         <p className="mt-2 text-center text-xs text-ink-faint">
-          Answers come only from your files. Check cited sources before acting.
+          Answers come only from your files and the sales database. Check cited sources before acting.
         </p>
       </div>
     </main>

@@ -19,6 +19,7 @@ from api.ingestion.pipeline import IngestionPipeline
 from api.ingestion.registry import DocumentRegistry, InMemoryDocumentRegistry
 from api.providers import build_providers
 from api.rate_limit import Limits, build_limits
+from api.sales.catalog import SalesCatalog
 from api.sales.database import DuckDbSalesDatabase, SalesDatabase
 from api.store.base import VectorStore
 from api.store.memory import InMemoryVectorStore
@@ -38,6 +39,7 @@ class Services:
     pipeline: IngestionPipeline
     agent: ChatAgent
     limits: Limits
+    sales_catalog: SalesCatalog
     pool: ConnectionPool | None = None
 
     def close(self) -> None:
@@ -57,6 +59,7 @@ def build_services(settings: Settings) -> Services:
         pipeline=IngestionPipeline(settings, registry, embedder, store),
         agent=ChatAgent(settings, embedder, chat_model, store, sales_db),
         limits=build_limits(settings),
+        sales_catalog=SalesCatalog(sales_db),
         pool=pool,
     )
 

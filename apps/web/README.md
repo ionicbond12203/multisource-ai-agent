@@ -104,12 +104,13 @@ User action ─▶ component ─▶ actions.* (use-workspace.ts) ─▶ API clie
 JSON uses camelCase (in FastAPI: Pydantic `alias_generator=to_camel`). Full types are in
 `src/features/workspace/api/types.ts` and `src/features/workspace/types.ts`.
 
-| Method & path              | Request                          | Response                     |
-| -------------------------- | -------------------------------- | ---------------------------- |
-| `POST /chat`               | `{ question, fileIds, history }` | `AskResponse` (see below)    |
-| `POST /documents`          | multipart form, field `file`     | `{ id, status: FileStatus }` |
-| `GET /documents/{id}`      | –                                | `{ id, status: FileStatus }` |
-| `POST /documents/{id}/ocr` | –                                | `{ id, status: FileStatus }` |
+| Method & path              | Request                          | Response                                                                     |
+| -------------------------- | -------------------------------- | ---------------------------------------------------------------------------- |
+| `POST /chat`               | `{ question, fileIds, history }` | `AskResponse` (see below)                                                    |
+| `POST /documents`          | multipart form, field `file`     | `{ id, status: FileStatus }`                                                 |
+| `GET /documents/{id}`      | –                                | `{ id, status: FileStatus }`                                                 |
+| `POST /documents/{id}/ocr` | –                                | `{ id, status: FileStatus }`                                                 |
+| `GET /sales/tables`        | –                                | `SalesDatabaseInfo` (tables, columns, first rows), for the SQL database page |
 
 `AskResponse`:
 
