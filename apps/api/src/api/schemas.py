@@ -115,3 +115,29 @@ class AskResponse(CamelModel):
     run: AgentRun
     grounded: bool
     follow_ups: list[str]
+
+
+# ---------- Sales database (GET /sales/tables) ----------
+
+CellValue = str | int | float | bool | None
+
+
+class SalesColumn(CamelModel):
+    name: str
+    type: str
+    description: str
+
+
+class SalesTable(CamelModel):
+    name: str
+    description: str
+    row_count: int
+    columns: list[SalesColumn]
+    # The first rows, values in column order. Dates and times are ISO strings.
+    preview_rows: list[list[CellValue]]
+
+
+class SalesDatabaseInfo(CamelModel):
+    company: str
+    period: str
+    tables: list[SalesTable]

@@ -4,6 +4,8 @@ drinks distributor. The same tables exist in Postgres (with DATABASE_URL) and
 in DuckDB (offline), both in a schema called `distribution`.
 """
 
+from dataclasses import dataclass
+
 SCHEMA = "distribution"
 
 # Tables the SQL agent may read. Anything else is rejected before it runs.
@@ -63,32 +65,130 @@ create table if not exists {SCHEMA}.deliveries (
 # Insert order matters because of the foreign keys.
 TABLE_ORDER = ("warehouses", "customers", "products", "orders", "order_items", "deliveries")
 
-# What the model is told about the data. Keep it in sync with CREATE_TABLES and data.py.
-DESCRIPTION = """\
-Postgres database of Sejuk Beverages Sdn Bhd, a Malaysian drinks distributor. Data covers 1 Jan to 30 Sep 2026.
-All tables are in the search path; use unqualified names.
+COMPANY = "Sejuk Beverages Sdn Bhd, a fictional Malaysian drinks distributor"
+PERIOD = "1 January to 30 September 2026"
 
-warehouses(id, name, state)
-  4 rows. id: 'WH-SA' Shah Alam (Selangor), 'WH-PG' Penang (Pulau Pinang), 'WH-JB' Johor Bahru (Johor),
-  'WH-KT' Kuantan (Pahang).
 
-customers(id, name, channel, state, city)
-  Retail outlets. channel: 'supermarket' | 'convenience' | 'horeca' (hotels, restaurants, cafes) | 'wholesaler'.
-  state: Malaysian state, e.g. 'Selangor', 'Kuala Lumpur', 'Pulau Pinang', 'Johor', 'Pahang', 'Perak', 'Kedah',
-  'Terengganu', 'Kelantan', 'Melaka', 'Negeri Sembilan'.
+@dataclass(frozen=True)
+class Column:
+    name: str
+    type: str  # as in CREATE_TABLES
+    description: str = ""
 
-products(sku, name, category, is_chilled, unit_price_myr)
-  category: 'rtd_tea' | 'juice' | 'dairy_alt' | 'water' | 'carbonated' | 'isotonic'.
-  is_chilled: must be kept at 2 to 8 C during delivery.
 
-orders(id, customer_id, warehouse_id, order_date, status)
-  status: 'delivered' | 'cancelled' | 'returned'. warehouse_id is the warehouse that shipped the order.
+@dataclass(frozen=True)
+class Table:
+    name: str
+    description: str
+    columns: tuple[Column, ...]
 
-order_items(order_id, sku, quantity, unit_price_myr)
-  Sales value of a line = quantity * unit_price_myr (Malaysian ringgit).
 
-deliveries(order_id, promised_date, delivered_at, max_temp_c, temperature_excursion)
-  One row per order. delivered_at is local time (MYT) and NULL for cancelled orders.
-  Late delivery: delivered_at::date > promised_date.
-  max_temp_c: highest reefer temperature during the trip, NULL when the order has no chilled products.
-  temperature_excursion: true when chilled stock stayed above 8 C for more than 30 minutes."""
+# The single description of the data: the model reads it (as DESCRIPTION) to
+# write SQL, and GET /sales/tables shows it to users. A test checks it matches
+# the real columns, so keep it in step with CREATE_TABLES and data.py.
+TABLES: tuple[Table, ...] = (
+    Table(
+        "warehouses",
+        "Distribution centres that ship the orders.",
+        (
+            Column(
+                "id",
+                "text",
+                "'WH-SA' Shah Alam (Selangor), 'WH-PG' Penang (Pulau Pinang), 'WH-JB' Johor Bahru (Johor), "
+                "'WH-KT' Kuantan (Pahang)",
+            ),
+            Column("name", "text"),
+            Column("state", "text", "Malaysian state the warehouse is in"),
+        ),
+    ),
+    Table(
+        "customers",
+        "Retail outlets that order drinks.",
+        (
+            Column("id", "text"),
+            Column("name", "text"),
+            Column(
+                "channel",
+                "text",
+                "'supermarket' | 'convenience' | 'horeca' (hotels, restaurants, cafes) | 'wholesaler'",
+            ),
+            Column(
+                "state",
+                "text",
+                "Malaysian state, e.g. 'Selangor', 'Kuala Lumpur', 'Pulau Pinang', 'Johor', 'Pahang', 'Perak', "
+                "'Kedah', 'Terengganu', 'Kelantan', 'Melaka', 'Negeri Sembilan'",
+            ),
+            Column("city", "text"),
+        ),
+    ),
+    Table(
+        "products",
+        "Drinks on sale.",
+        (
+            Column("sku", "text"),
+            Column("name", "text"),
+            Column(
+                "category", "text", "'rtd_tea' | 'juice' | 'dairy_alt' | 'water' | 'carbonated' | 'isotonic'"
+            ),
+            Column("is_chilled", "boolean", "must be kept at 2 to 8 C during delivery"),
+            Column("unit_price_myr", "numeric(10, 2)", "list price in Malaysian ringgit"),
+        ),
+    ),
+    Table(
+        "orders",
+        "One row per customer order.",
+        (
+            Column("id", "integer"),
+            Column("customer_id", "text", "customers.id"),
+            Column("warehouse_id", "text", "warehouses.id, the warehouse that shipped the order"),
+            Column("order_date", "date"),
+            Column("status", "text", "'delivered' | 'cancelled' | 'returned'"),
+        ),
+    ),
+    Table(
+        "order_items",
+        "Products in each order. Sales value of a line = quantity * unit_price_myr (Malaysian ringgit).",
+        (
+            Column("order_id", "integer", "orders.id"),
+            Column("sku", "text", "products.sku"),
+            Column("quantity", "integer", "bottles"),
+            Column("unit_price_myr", "numeric(10, 2)", "price charged per bottle"),
+        ),
+    ),
+    Table(
+        "deliveries",
+        "One row per order. Late delivery: delivered_at::date > promised_date.",
+        (
+            Column("order_id", "integer", "orders.id"),
+            Column("promised_date", "date"),
+            Column("delivered_at", "timestamp", "local time (MYT); NULL for cancelled orders"),
+            Column(
+                "max_temp_c",
+                "numeric(4, 1)",
+                "highest reefer temperature during the trip; NULL when the order has no chilled products",
+            ),
+            Column(
+                "temperature_excursion",
+                "boolean",
+                "true when chilled stock stayed above 8 C for more than 30 minutes",
+            ),
+        ),
+    ),
+)
+
+
+def _describe_for_model() -> str:
+    lines = [
+        f"Postgres database of {COMPANY}. Data covers {PERIOD}.",
+        "All tables are in the search path; use unqualified names.",
+    ]
+    for table in TABLES:
+        lines.append("")
+        lines.append(f"{table.name}({', '.join(column.name for column in table.columns)})")
+        lines.append(f"  {table.description}")
+        lines += [f"  {column.name}: {column.description}." for column in table.columns if column.description]
+    return "\n".join(lines)
+
+
+# What the model is told about the data when it writes SQL.
+DESCRIPTION = _describe_for_model()

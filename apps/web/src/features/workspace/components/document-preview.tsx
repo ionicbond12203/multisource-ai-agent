@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { Source } from "../types";
 
 /**
@@ -39,6 +40,9 @@ function SqlPreview({ source }: { source: Source }) {
     <div className="flex flex-col gap-3 bg-muted p-4">
       {query && <CodeBlock label="Read-only query" text={query.text} />}
       {result && <CodeBlock label="Result" text={result.text} />}
+      <Link href="/sql-database" className="text-xs text-accent underline underline-offset-2">
+        Browse the tables in the sales database
+      </Link>
     </div>
   );
 }
