@@ -6,9 +6,10 @@ fast and repeatable. They are deliberately simple:
 
 - `HashingEmbedder` matches on shared words, not meaning ("car" ≠ "vehicle").
 - `ExtractiveChatModel` copies the best-matching sentence from each source
-  instead of writing a new answer.
+  instead of writing a new answer, and rewrites follow-ups by prepending the
+  previous user question.
 
-Swap them for a real provider (step 2) to get semantic search and real answers.
+Set LLM_PROVIDER=gemini for semantic search and real answers.
 """
 
 import math
@@ -16,7 +17,15 @@ import re
 import zlib
 from collections.abc import Sequence
 
-from api.graph.prompts import QUESTION_LABEL, SOURCE_HEADER_PATTERN, SOURCES_CLOSE, SOURCES_OPEN
+from api.graph.prompts import (
+    FOLLOW_UP_LABEL,
+    PREVIOUS_QUESTION_LABEL,
+    QUESTION_LABEL,
+    REWRITE_SYSTEM_PROMPT,
+    SOURCE_HEADER_PATTERN,
+    SOURCES_CLOSE,
+    SOURCES_OPEN,
+)
 
 _WORD = re.compile(r"\w+", re.UNICODE)
 _SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
@@ -36,11 +45,14 @@ def tokenize(text: str) -> list[str]:
 class HashingEmbedder:
     """Bag-of-words vector: each word is hashed into one of `dimensions` slots."""
 
-    def __init__(self, dimensions: int = 512) -> None:
+    def __init__(self, dimensions: int = 768) -> None:
         self.dimensions = dimensions
 
-    def embed(self, texts: Sequence[str]) -> list[list[float]]:
+    def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
         return [self._embed_one(text) for text in texts]
+
+    def embed_query(self, text: str) -> list[float]:
+        return self._embed_one(text)
 
     def _embed_one(self, text: str) -> list[float]:
         vector = [0.0] * self.dimensions
@@ -56,7 +68,12 @@ class ExtractiveChatModel:
     max_sources = 2
 
     def generate(self, system: str, prompt: str) -> str:
-        question = _find_question(prompt)
+        if system == REWRITE_SYSTEM_PROMPT:
+            return _rewrite(prompt)
+        return self._answer(prompt)
+
+    def _answer(self, prompt: str) -> str:
+        question = _find_line(prompt, QUESTION_LABEL)
         question_words = set(tokenize(question))
 
         best: list[tuple[int, int, str]] = []  # (overlap, source index, sentence)
@@ -77,10 +94,17 @@ class ExtractiveChatModel:
         return " ".join(f"{_ensure_period(sentence)} [{index}]" for _, index, sentence in chosen)
 
 
-def _find_question(prompt: str) -> str:
+def _rewrite(prompt: str) -> str:
+    """Joins the previous user question and the follow-up, so shared words still match."""
+    previous = _find_line(prompt, PREVIOUS_QUESTION_LABEL)
+    follow_up = _find_line(prompt, FOLLOW_UP_LABEL)
+    return f"{previous} {follow_up}".strip()
+
+
+def _find_line(prompt: str, label: str) -> str:
     for line in prompt.splitlines():
-        if line.startswith(QUESTION_LABEL):
-            return line.removeprefix(QUESTION_LABEL).strip()
+        if line.startswith(label):
+            return line.removeprefix(label).strip()
     return ""
 
 

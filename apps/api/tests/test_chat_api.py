@@ -6,7 +6,9 @@ from helpers import upload
 from pdf_factory import make_pdf
 
 from api.graph.build import NO_FILES_ANSWER, NOT_FOUND_ANSWER, ChatAgent
+from api.graph.prompts import REWRITE_SYSTEM_PROMPT
 from api.main import create_app
+from api.providers.base import ProviderRateLimited
 from api.providers.fake import HashingEmbedder
 from api.store.memory import InMemoryVectorStore
 
@@ -76,34 +78,39 @@ def test_only_selected_files_are_searched(client):
     assert ask(client, "chilled RTD tea last-mile delivery", [halal])["content"] == NOT_FOUND_ANSWER
 
 
-class RecordingModel:
-    """Chat model stub that returns a fixed answer and remembers the prompt."""
+class ScriptedModel:
+    """Chat model stub: fixed replies for rewriting and answering; records every prompt."""
 
-    def __init__(self, answer: str) -> None:
+    def __init__(self, answer: str, rewrite: str = "") -> None:
         self.answer = answer
-        self.prompt = ""
+        self.rewrite = rewrite
+        self.prompts: dict[str, str] = {}
 
     def generate(self, system: str, prompt: str) -> str:
-        self.prompt = prompt
-        return self.answer
+        kind = "rewrite" if system == REWRITE_SYSTEM_PROMPT else "answer"
+        self.prompts[kind] = prompt
+        return self.rewrite if kind == "rewrite" else self.answer
 
 
 class FailingModel:
+    def __init__(self, error: Exception) -> None:
+        self.error = error
+
     def generate(self, system: str, prompt: str) -> str:
-        raise RuntimeError("provider is down")
+        raise self.error
 
 
-def client_with_model(settings, model) -> tuple[TestClient, object]:
+def client_with_model(settings, model) -> TestClient:
     app = create_app(settings)
     services = app.state.services
     # Reuse the app's store so uploaded files are searchable by the stub agent.
-    agent = ChatAgent(settings, HashingEmbedder(), model, services.pipeline.store)
+    agent = ChatAgent(settings, HashingEmbedder(), model, services.store)
     app.state.services = replace(services, agent=agent)
-    return TestClient(app), model
+    return TestClient(app)
 
 
 def test_invented_citation_is_removed_and_marked_not_grounded(settings):
-    client, _ = client_with_model(settings, RecordingModel("Keep it cold [1]. Also true [9]."))
+    client = client_with_model(settings, ScriptedModel("Keep it cold [1]. Also true [9]."))
     file_id = upload_id(client, "sop.pdf", make_pdf(SOP_PAGES))
     body = ask(client, "chilled tea temperature", [file_id])
     assert body["content"] == "Keep it cold [1]. Also true."
@@ -111,24 +118,64 @@ def test_invented_citation_is_removed_and_marked_not_grounded(settings):
     assert body["run"]["steps"][-1]["summary"] == "Removed 1 citation with no source"
 
 
-def test_history_is_included_in_the_prompt(settings):
-    client, model = client_with_model(settings, RecordingModel("Yes [1]."))
+HISTORY = [
+    {"role": "user", "content": "Tell me about chilled RTD tea"},
+    {"role": "assistant", "content": "It is kept cold during delivery [1]."},
+]
+
+
+def test_follow_up_is_rewritten_before_searching(client):
     file_id = upload_id(client, "sop.pdf", make_pdf(SOP_PAGES))
-    history = [
-        {"role": "user", "content": "Tell me about chilled tea"},
-        {"role": "assistant", "content": "OK"},
+    body = ask(client, "And during last-mile delivery?", [file_id], HISTORY)
+    steps = body["run"]["steps"]
+    assert [step["node"] for step in steps] == [
+        "router",
+        "rewrite_query",
+        "retrieve",
+        "answer",
+        "verify_citations",
     ]
-    ask(client, "And its temperature?", [file_id], history)
-    assert "User: Tell me about chilled tea" in model.prompt
-    assert "Question: And its temperature?" in model.prompt
+    assert steps[1]["summary"].startswith('Follow-up rewritten as "Tell me about chilled RTD tea')
+    assert body["grounded"] is True
 
 
-def test_provider_failure_returns_a_friendly_502(settings):
-    client, _ = client_with_model(settings, FailingModel())
+def test_rewritten_question_is_searched_and_history_reaches_the_answer(settings):
+    model = ScriptedModel(
+        "Between 2 C and 8 C [1].", rewrite="What temperature must chilled RTD tea be kept at?"
+    )
+    client = client_with_model(settings, model)
+    file_id = upload_id(client, "sop.pdf", make_pdf(SOP_PAGES))
+
+    # "it" alone matches nothing; only the rewritten question finds the SOP.
+    body = ask(client, "What about it?", [file_id], HISTORY)
+
+    assert body["sources"][0]["location"] == "Page 2 of 2"
+    assert "Previous question: Tell me about chilled RTD tea" in model.prompts["rewrite"]
+    assert "User: Tell me about chilled RTD tea" in model.prompts["answer"]
+    assert "Question: What about it?" in model.prompts["answer"]
+
+
+def test_empty_rewrite_falls_back_to_the_original_question(settings):
+    client = client_with_model(settings, ScriptedModel("Between 2 C and 8 C [1].", rewrite=""))
+    file_id = upload_id(client, "sop.pdf", make_pdf(SOP_PAGES))
+    body = ask(client, "chilled RTD tea temperature", [file_id], HISTORY)
+    assert body["run"]["steps"][1]["summary"] == 'Follow-up rewritten as "chilled RTD tea temperature"'
+
+
+def test_unexpected_failure_returns_a_friendly_502(settings):
+    client = client_with_model(settings, FailingModel(RuntimeError("bug")))
     file_id = upload_id(client, "sop.pdf", make_pdf(SOP_PAGES))
     response = client.post("/chat", json={"question": "chilled tea", "fileIds": [file_id], "history": []})
     assert response.status_code == 502
     assert response.json()["detail"] == "The assistant couldn't answer right now. Try again."
+
+
+def test_rate_limit_returns_429_with_the_reason(settings):
+    client = client_with_model(settings, FailingModel(ProviderRateLimited("Quota used up. Wait a minute.")))
+    file_id = upload_id(client, "sop.pdf", make_pdf(SOP_PAGES))
+    response = client.post("/chat", json={"question": "chilled tea", "fileIds": [file_id], "history": []})
+    assert response.status_code == 429
+    assert response.json()["detail"] == "Quota used up. Wait a minute."
 
 
 @pytest.mark.parametrize("question", ["", "x" * 2001])
@@ -148,5 +195,5 @@ def test_cors_allows_the_frontend_origin(client):
 def test_vector_store_isolated_per_app(settings):
     # Each app instance gets its own store, so tests can't leak files into each other.
     first, second = create_app(settings), create_app(settings)
-    assert first.state.services.pipeline.store is not second.state.services.pipeline.store
-    assert isinstance(first.state.services.pipeline.store, InMemoryVectorStore)
+    assert first.state.services.store is not second.state.services.store
+    assert isinstance(first.state.services.store, InMemoryVectorStore)

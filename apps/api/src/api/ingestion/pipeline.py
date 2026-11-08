@@ -15,7 +15,7 @@ from api.config import Settings
 from api.ingestion.chunking import chunk_pages
 from api.ingestion.extract import ExtractionError, extract_pages
 from api.ingestion.registry import DocumentRegistry
-from api.providers.base import Embedder
+from api.providers.base import Embedder, ProviderError
 from api.schemas import Failed, Processing, Ready
 from api.store.base import Chunk, VectorStore
 
@@ -40,6 +40,9 @@ class IngestionPipeline:
             self._run(document_id, file_name, data)
         except ExtractionError as error:
             self.registry.set_status(document_id, Failed(reason=str(error)))
+        except ProviderError as error:
+            self.store.delete_file(document_id)
+            self.registry.set_status(document_id, Failed(reason=str(error), recovery="retry"))
         except Exception:
             logger.exception("Ingestion failed for %s", document_id)
             self.store.delete_file(document_id)
@@ -89,5 +92,5 @@ class IngestionPipeline:
             self.registry.set_status(
                 document_id, Processing(stage="embedding", progress=start / max(len(texts), 1))
             )
-            vectors.extend(self.embedder.embed(texts[start : start + EMBED_BATCH_SIZE]))
+            vectors.extend(self.embedder.embed_documents(texts[start : start + EMBED_BATCH_SIZE]))
         return vectors
