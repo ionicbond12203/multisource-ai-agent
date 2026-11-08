@@ -11,6 +11,7 @@ interface SourceCardProps {
 /** One cited source. The selected card expands to show the highlighted passages. */
 export function SourceCard({ source, selected, onSelect }: SourceCardProps) {
   const citedCount = source.passages.filter((passage) => passage.cited).length;
+  const isSql = source.kind === "sql";
 
   return (
     <div
@@ -40,16 +41,22 @@ export function SourceCard({ source, selected, onSelect }: SourceCardProps) {
           <span className="block truncate text-[13px] font-medium">{source.fileName}</span>
           <span className="block text-xs text-ink-muted">{source.location}</span>
         </span>
-        <span className="font-mono text-xs text-ink-muted" title="Relevance score">
-          {source.score.toFixed(2)}
-        </span>
+        {isSql ? (
+          <span className="font-mono text-xs text-ink-muted">SQL</span>
+        ) : (
+          <span className="font-mono text-xs text-ink-muted" title="Relevance score">
+            {source.score.toFixed(2)}
+          </span>
+        )}
       </button>
 
       {selected && (
         <>
           <DocumentPreview source={source} />
           <p className="px-3 py-2 text-xs text-ink-muted">
-            Highlighted: {citedCount} {citedCount === 1 ? "passage" : "passages"} used in the answer
+            {isSql
+              ? "The answer is based on this query result"
+              : `Highlighted: ${citedCount} ${citedCount === 1 ? "passage" : "passages"} used in the answer`}
           </p>
         </>
       )}

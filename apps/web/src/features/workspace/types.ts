@@ -57,6 +57,8 @@ export interface SourcePassage {
 }
 
 export interface Source {
+  /** "document" (default): passages from a file. "sql": passages are the query, then its result table. */
+  kind?: "document" | "sql";
   /** Citation number used in the answer text, e.g. 1 for "[1]". */
   index: number;
   fileId: string;

@@ -68,18 +68,48 @@ Two test files skip themselves unless configured: `test_postgres.py` needs `TEST
 `POST /chat` runs a LangGraph graph (`src/api/graph/build.py`):
 
 ```
-START → router ─┬─ first question ──────────────→ retrieve ─┬─ found ───→ answer → verify_citations → END
-                ├─ follow-up ─→ rewrite_query ──↗           └─ nothing ─→ END  ("not found in your files")
-                └─ no files ──→ END                                            ("no files selected")
+START → router ──(follow-up)──→ rewrite_query ─┐  (then the same route)
+          │
+          ├─ documents ─→ retrieve ─┬─ found ───→ answer ─────────────────────┐
+          │                         └─ nothing ─→ END  ("not found")          ├─→ verify_citations → END
+          ├─ database ──→ generate_sql → run_sql ─┬─ ok ──→ answer_from_data ─┘
+          │                    ↑                  ├─ error, 1 retry left ─┐
+          │                    └──────────────────┼───────────────────────┘
+          │                                       └─ error again ─→ END  ("couldn't get an answer")
+          └─ none ─→ END  ("no files selected")
 ```
 
-| Node               | Job                                                                                        |
-| ------------------ | ------------------------------------------------------------------------------------------ |
-| `router`           | Decides which path to take. Today: documents or nothing. Later: documents or SQL.          |
-| `rewrite_query`    | Only for follow-ups: turns "And its temperature?" into a question that stands on its own.  |
-| `retrieve`         | Embeds the question, searches only the selected files, drops low-scoring chunks.           |
-| `answer`           | Numbers the chunks as sources [1], [2] … and asks the chat model to answer with citations. |
-| `verify_citations` | Removes citations that match no source and sets `grounded`.                                |
+| Node               | Job                                                                                           |
+| ------------------ | --------------------------------------------------------------------------------------------- |
+| `router`           | Asks the model: is this about the uploaded documents or the sales database?                   |
+| `rewrite_query`    | Only for follow-ups: turns "And its temperature?" into a question that stands on its own.     |
+| `retrieve`         | Embeds the question, searches only the selected files, drops low-scoring chunks.              |
+| `answer`           | Numbers the chunks as sources [1], [2] … and asks the chat model to answer with citations.    |
+| `generate_sql`     | Writes one PostgreSQL query from the schema description. On a retry it sees its last error.   |
+| `run_sql`          | Checks the SQL with the guard, then runs it read-only. A rejection or error is a failed step. |
+| `answer_from_data` | Answers from the query result, which becomes source [1] (`kind: "sql"`).                      |
+| `verify_citations` | Removes citations that match no source and sets `grounded`.                                   |
+
+## The sales database (SQL agent)
+
+A fictional Malaysian drinks distributor, Sejuk Beverages Sdn Bhd, with orders from January to September
+2026: `warehouses`, `customers`, `products`, `orders`, `order_items`, `deliveries`. `src/api/sales/data.py`
+generates it deterministically and builds in a few patterns worth finding (a Ramadan sales peak, monsoon
+delays in Kuantan in Q1, a faulty reefer in Penang in August). It is loaded on startup into Postgres (schema
+`distribution`) when `DATABASE_URL` is set, or into an embedded read-only DuckDB file when it isn't.
+
+The model's SQL is untrusted, since a user can try to talk it into anything. Layers of protection:
+
+| Layer                 | Where                        | Stops                                                         |
+| --------------------- | ---------------------------- | ------------------------------------------------------------- |
+| SQL guard             | `sales/guard.py`             | Anything but one SELECT; other tables; `pg_sleep`, file reads |
+| Row limit             | `sales/guard.py`             | Huge results (`LIMIT 200` added or lowered)                   |
+| Read-only transaction | `postgres/sales_database.py` | Writes, even if the guard missed one                          |
+| `sales_reader` role   | `postgres/sales_database.py` | Reading anything outside the `distribution` schema            |
+| Statement timeout     | both database classes        | Queries that run for more than 5 seconds                      |
+| Prompt rules          | `graph/prompts.py`           | The model following instructions hidden in the question       |
+
+`tests/test_sales_guard.py` lists the attacks that are blocked.
 
 Every node records a step (name, summary, duration). They are returned in `run.steps`, and the frontend
 shows them as the agent trace.
@@ -125,13 +155,19 @@ src/api/
 │   ├── base.py        Embedder and ChatModel interfaces
 │   ├── fake.py        Offline implementations
 │   └── gemini.py      Google Gemini (chat + embeddings)
+├── sales/
+│   ├── schema.py      Tables, whitelist and the description the model sees
+│   ├── data.py        Deterministic sample data
+│   ├── guard.py       SQL checks (the security boundary)
+│   └── database.py    SalesDatabase interface + offline DuckDB version
 ├── store/
 │   ├── base.py        VectorStore interface
 │   └── memory.py      In-memory implementation
 └── postgres/
     ├── schema.sql     Tables, applied at startup
     ├── vector_store.py       pgvector VectorStore
-    └── document_registry.py  Document status in Postgres
+    ├── document_registry.py  Document status in Postgres
+    └── sales_database.py     Sales data in Postgres, read-only role
 tests/                 pytest; builds its own PDFs, needs no network or keys by default
 ```
 
@@ -165,6 +201,7 @@ To add a provider: implement `Embedder` and `ChatModel`, add a case to `build_pr
 
 ## Not built yet
 
-- SQL agent over the sample distributor database (step 3)
 - Guardrails: PII masking and prompt-injection checks (step 4)
 - OCR for scanned PDFs, deleting old uploads, rate limiting
+- Fewer model calls per question: each one takes 3 to 4, so the free Gemini tier allows only a few questions a
+  minute

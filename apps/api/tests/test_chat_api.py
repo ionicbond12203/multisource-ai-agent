@@ -6,7 +6,7 @@ from helpers import upload
 from pdf_factory import make_pdf
 
 from api.graph.build import NO_FILES_ANSWER, NOT_FOUND_ANSWER, ChatAgent
-from api.graph.prompts import REWRITE_SYSTEM_PROMPT
+from api.graph.prompts import REWRITE_SYSTEM_PROMPT, ROUTER_SYSTEM_PROMPT
 from api.main import create_app
 from api.providers.base import ProviderRateLimited
 from api.providers.fake import HashingEmbedder
@@ -87,6 +87,8 @@ class ScriptedModel:
         self.prompts: dict[str, str] = {}
 
     def generate(self, system: str, prompt: str) -> str:
+        if system == ROUTER_SYSTEM_PROMPT:
+            return "documents"
         kind = "rewrite" if system == REWRITE_SYSTEM_PROMPT else "answer"
         self.prompts[kind] = prompt
         return self.rewrite if kind == "rewrite" else self.answer
@@ -104,7 +106,7 @@ def client_with_model(settings, model) -> TestClient:
     app = create_app(settings)
     services = app.state.services
     # Reuse the app's store so uploaded files are searchable by the stub agent.
-    agent = ChatAgent(settings, HashingEmbedder(), model, services.store)
+    agent = ChatAgent(settings, HashingEmbedder(), model, services.store, services.sales_db)
     app.state.services = replace(services, agent=agent)
     return TestClient(app)
 

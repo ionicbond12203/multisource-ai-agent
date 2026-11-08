@@ -18,6 +18,16 @@ export const siteConfig = {
     { label: "How it works", href: "/how-it-works", available: false },
   ],
 
+  /**
+   * Starter questions when connected to the backend. They use the sample sales
+   * database, which is always available, so they work before any upload.
+   */
+  salesQuestions: [
+    "Which state had the most late deliveries in Q1?",
+    "Show total sales by month",
+    "Which warehouse had the most temperature excursions in August?",
+  ],
+
   upload: {
     maxFileSizeBytes: 20 * 1024 * 1024,
     acceptedExtensions: [".pdf", ".docx", ".txt", ".md", ".csv", ".xlsx"],
