@@ -93,6 +93,7 @@ class RateLimiter:
 class Limits:
     chat: RateLimiter
     uploads: RateLimiter
+    browse: RateLimiter  # paging through the sales tables
 
 
 def build_limits(settings: Settings, clock: Callable[[], float] = time.monotonic) -> Limits:
@@ -124,7 +125,16 @@ def build_limits(settings: Settings, clock: Callable[[], float] = time.monotonic
             )
         ]
     )
-    return Limits(chat=chat, uploads=uploads)
+    browse = RateLimiter(
+        [
+            Rule(
+                SlidingWindow(settings.browse_per_client_per_minute, MINUTE, clock),
+                per_client=True,
+                message="You're paging faster than this free demo allows. Try again {when}.",
+            )
+        ]
+    )
+    return Limits(chat=chat, uploads=uploads, browse=browse)
 
 
 def client_key(request: Request) -> str:

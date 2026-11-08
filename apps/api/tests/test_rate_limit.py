@@ -48,6 +48,7 @@ def limited_client(**limits) -> TestClient:
         "chat_per_client_per_day": 0,
         "chat_per_minute": 0,
         "uploads_per_client_per_hour": 0,
+        "browse_per_client_per_minute": 0,
     }
     return TestClient(create_app(Settings(**{**off, **limits}, _env_file=None)))
 

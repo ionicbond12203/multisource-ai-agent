@@ -1,5 +1,6 @@
 /**
- * Shape of GET /sales/tables. Mirrors SalesDatabaseInfo in apps/api/src/api/schemas.py.
+ * Shapes of the sales database endpoints. Mirror SalesDatabaseInfo and
+ * TableRows in apps/api/src/api/schemas.py.
  */
 
 export type CellValue = string | number | boolean | null;
@@ -15,13 +16,35 @@ export interface SalesTable {
   name: string;
   description: string;
   rowCount: number;
+  primaryKey: string[];
   columns: SalesColumn[];
-  /** The first rows, values in column order. Dates and times are ISO strings. */
-  previewRows: CellValue[][];
 }
 
+/** GET /sales/tables */
 export interface SalesDatabaseInfo {
   company: string;
   period: string;
   tables: SalesTable[];
+}
+
+export type SortOrder = "asc" | "desc";
+
+export interface RowsQuery {
+  offset: number;
+  limit: number;
+  sort: string | null;
+  order: SortOrder;
+}
+
+/** GET /sales/tables/{name}/rows: one page of rows. */
+export interface TableRows {
+  table: string;
+  columns: string[];
+  /** Values in column order. Dates and times are ISO strings. */
+  rows: CellValue[][];
+  total: number;
+  offset: number;
+  limit: number;
+  sort?: string;
+  order: SortOrder;
 }

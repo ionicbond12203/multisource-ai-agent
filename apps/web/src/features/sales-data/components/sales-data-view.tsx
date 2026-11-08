@@ -1,192 +1,286 @@
 "use client";
 
+import { ArrowRight, Info } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { BackendStatusBanner, useBackendStatus } from "@/features/workspace";
 import { cn } from "@/lib/utils";
-import { fetchSalesDatabase } from "../api";
-import type { CellValue, SalesDatabaseInfo, SalesTable } from "../types";
+import { fetchSalesDatabase, fetchTableRows } from "../api";
+import { useRemote } from "../hooks/use-remote";
+import type { RowsQuery, SalesColumn, SalesTable } from "../types";
+import { DataGrid } from "./data-grid";
 
-type Load =
-  { kind: "loading" } | { kind: "loaded"; data: SalesDatabaseInfo } | { kind: "failed"; message: string };
+const PAGE_SIZES = [25, 50, 100] as const;
 
 /**
- * Browse the sample sales database the SQL agent queries: every table, what
- * each column means, and the first rows. Read-only; no AI calls involved.
+ * A table browser for the sample sales database, in the style of a database
+ * GUI: tabs to pick a table, then every row a page at a time, sortable by any
+ * column. Read-only; no AI calls involved.
  */
 export function SalesDataView({ apiUrl }: { apiUrl: string | undefined }) {
   const backendStatus = useBackendStatus(apiUrl);
-  const [load, setLoad] = useState<Load>({ kind: "loading" });
-  const [selected, setSelected] = useState<string | null>(null);
-  const [attempt, setAttempt] = useState(0);
-  const retry = useCallback(() => {
-    setLoad({ kind: "loading" });
-    setAttempt((n) => n + 1);
-  }, []);
+  const database = useRemote(apiUrl ? "tables" : null, (signal) => fetchSalesDatabase(apiUrl!, signal));
 
-  useEffect(() => {
-    if (!apiUrl) return;
-    const controller = new AbortController();
-    fetchSalesDatabase(apiUrl, controller.signal)
-      .then((data) => setLoad({ kind: "loaded", data }))
-      .catch((error: unknown) => {
-        if (controller.signal.aborted) return;
-        setLoad({
-          kind: "failed",
-          message: error instanceof Error ? error.message : "Could not load the tables.",
-        });
-      });
-    return () => controller.abort();
-  }, [apiUrl, attempt]);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [query, setQuery] = useState<RowsQuery>({ offset: 0, limit: 50, sort: null, order: "asc" });
+
+  const tables = database.data?.tables ?? [];
+  const table = tables.find((t) => t.name === selected) ?? tables[0];
+
+  const rows = useRemote(table && apiUrl ? JSON.stringify([table.name, query]) : null, (signal) =>
+    fetchTableRows(apiUrl!, table!.name, query, signal),
+  );
+  // Rows of the table on screen only; while another table loads, the old rows are not shown under new headers.
+  const page = rows.data?.table === table?.name ? rows.data : undefined;
+
+  function selectTable(name: string) {
+    setSelected(name);
+    setQuery((q) => ({ ...q, offset: 0, sort: null, order: "asc" }));
+  }
+
+  function sortBy(column: string) {
+    // Each click cycles: ascending → descending → back to the default (primary key) order.
+    setQuery((q) => {
+      if (q.sort !== column) return { ...q, offset: 0, sort: column, order: "asc" };
+      if (q.order === "asc") return { ...q, offset: 0, order: "desc" };
+      return { ...q, offset: 0, sort: null, order: "asc" };
+    });
+  }
 
   if (!apiUrl) {
     return (
-      <Shell>
-        <p className="text-ink-muted">
+      <main className="flex-1 px-6 py-8">
+        <h1 className="font-display text-xl font-semibold tracking-tight">SQL database</h1>
+        <p className="mt-2 text-ink-muted">
           This page reads the sales database from the backend. Set <code>NEXT_PUBLIC_API_URL</code> to see it.
         </p>
-      </Shell>
+      </main>
     );
   }
-
-  const tables = load.kind === "loaded" ? load.data.tables : [];
-  const current = tables.find((table) => table.name === selected) ?? tables[0];
 
   return (
     <>
       <BackendStatusBanner status={backendStatus} />
-      <Shell>
-        {load.kind === "loaded" && (
-          <p className="max-w-3xl text-ink-muted">
-            {load.data.company}, with orders from {load.data.period}. These are the tables the
-            assistant&apos;s SQL agent can read, through a read-only connection. Ask a data question in the{" "}
-            <Link href="/" className="text-accent underline underline-offset-2">
-              Workspace
-            </Link>{" "}
-            and the answer shows the exact SQL it ran.
-          </p>
-        )}
-
-        {load.kind === "loading" && <p className="text-ink-muted">Loading tables…</p>}
-
-        {load.kind === "failed" && (
-          <div role="alert" className="flex flex-wrap items-center gap-3 text-ink">
-            <span>{load.message}</span>
-            <button
-              type="button"
-              onClick={retry}
-              className="cursor-pointer rounded-lg border border-line-strong px-3 py-1.5 text-[13px] font-medium hover:bg-subtle"
-            >
-              Try again
-            </button>
+      <main className="flex min-h-0 flex-1 flex-col">
+        <div className="flex flex-wrap items-end gap-x-6 gap-y-2 px-6 pt-5 pb-3">
+          <div>
+            <h1 className="font-display text-xl font-semibold tracking-tight">SQL database</h1>
+            <p className="text-[13px] text-ink-muted">
+              {database.data
+                ? `Sejuk Beverages (fictional) · ${database.data.period} · read-only`
+                : "Sample sales data the SQL agent queries"}
+            </p>
           </div>
-        )}
+          <Link
+            href="/"
+            className="ml-auto flex items-center gap-1.5 rounded-lg border border-line-strong px-3 py-1.5 text-[13px] font-medium text-ink hover:bg-subtle"
+          >
+            Ask a question about this data
+            <ArrowRight aria-hidden="true" className="size-3.5" />
+          </Link>
+        </div>
 
-        {current && (
-          <div className="mt-6 grid gap-6 md:grid-cols-[220px_minmax(0,1fr)]">
-            <nav aria-label="Tables" className="flex flex-row flex-wrap gap-1 md:flex-col">
-              {tables.map((table) => (
-                <button
-                  key={table.name}
-                  type="button"
-                  aria-current={table.name === current.name ? "true" : undefined}
-                  onClick={() => setSelected(table.name)}
-                  className={cn(
-                    "flex cursor-pointer items-baseline justify-between gap-3 rounded-lg px-3 py-2 text-left",
-                    table.name === current.name
-                      ? "bg-muted font-medium text-ink"
-                      : "text-ink-muted hover:bg-muted",
-                  )}
-                >
-                  <span className="font-mono text-[13px]">{table.name}</span>
-                  <span className="text-xs text-ink-faint">{formatCount(table.rowCount)}</span>
-                </button>
-              ))}
-            </nav>
-            <TableDetail table={current} />
-          </div>
+        {database.error && <ErrorBar message={database.error} onRetry={database.retry} />}
+        {!database.data && !database.error && <p className="px-6 py-4 text-ink-muted">Loading tables…</p>}
+
+        {table && (
+          <>
+            <TableTabs tables={tables} current={table.name} onSelect={selectTable} />
+            <TableToolbar table={table} />
+
+            <div className="mx-6 min-h-[320px] flex-1 overflow-auto rounded-xl border border-line bg-surface">
+              {page ? (
+                <DataGrid
+                  columns={table.columns}
+                  rows={page.rows}
+                  firstRowNumber={page.offset + 1}
+                  sort={query.sort}
+                  order={query.order}
+                  onSort={sortBy}
+                  stale={rows.loading}
+                />
+              ) : rows.error ? null : (
+                <p className="p-4 text-ink-muted">Loading rows…</p>
+              )}
+            </div>
+            {rows.error && <ErrorBar message={rows.error} onRetry={rows.retry} />}
+
+            <Pagination
+              total={table.rowCount}
+              offset={query.offset}
+              limit={query.limit}
+              onChange={(offset, limit) => setQuery((q) => ({ ...q, offset, limit }))}
+              sortLabel={query.sort ? `${query.sort} ${query.order === "asc" ? "↑" : "↓"}` : null}
+            />
+          </>
         )}
-      </Shell>
+      </main>
     </>
   );
 }
 
-function Shell({ children }: { children: React.ReactNode }) {
+function TableTabs({
+  tables,
+  current,
+  onSelect,
+}: {
+  tables: SalesTable[];
+  current: string;
+  onSelect: (name: string) => void;
+}) {
   return (
-    <main className="mx-auto w-full max-w-6xl flex-1 px-6 py-8">
-      <h1 className="mb-2 font-display text-2xl font-semibold tracking-tight">SQL database</h1>
-      {children}
-    </main>
+    <div role="tablist" aria-label="Tables" className="flex gap-1 overflow-x-auto border-b border-line px-6">
+      {tables.map((t) => {
+        const active = t.name === current;
+        return (
+          <button
+            key={t.name}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            onClick={() => onSelect(t.name)}
+            className={cn(
+              "-mb-px flex shrink-0 cursor-pointer items-center gap-2 border-b-2 px-3 py-2 text-[13px] whitespace-nowrap",
+              active
+                ? "border-accent font-medium text-ink"
+                : "border-transparent text-ink-muted hover:text-ink",
+            )}
+          >
+            {t.name}
+            <span className="rounded-full bg-muted px-1.5 text-[11px] text-ink-muted tabular-nums">
+              {t.rowCount.toLocaleString("en-US")}
+            </span>
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
-function TableDetail({ table }: { table: SalesTable }) {
-  const shown = table.previewRows.length;
+function TableToolbar({ table }: { table: SalesTable }) {
+  const [showColumns, setShowColumns] = useState(false);
   return (
-    <section aria-labelledby="table-title" className="min-w-0">
-      <h2 id="table-title" className="font-mono text-lg font-semibold">
-        {table.name}
-      </h2>
-      <p className="mt-1 text-ink-muted">{table.description}</p>
-
-      <h3 className="mt-6 mb-2 text-xs font-semibold tracking-wider text-ink-muted uppercase">Columns</h3>
-      <div className="overflow-x-auto rounded-xl border border-line bg-surface">
-        <table className="w-full text-left text-[13px]">
-          <thead className="bg-subtle text-xs text-ink-muted">
-            <tr>
-              <th className="px-3 py-2 font-medium">Column</th>
-              <th className="px-3 py-2 font-medium">Type</th>
-              <th className="px-3 py-2 font-medium">Meaning</th>
-            </tr>
-          </thead>
-          <tbody>
-            {table.columns.map((column) => (
-              <tr key={column.name} className="border-t border-line align-top">
-                <td className="px-3 py-2 font-mono whitespace-nowrap">{column.name}</td>
-                <td className="px-3 py-2 font-mono whitespace-nowrap text-ink-muted">{column.type}</td>
-                <td className="px-3 py-2 text-ink-muted">{column.description || "—"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+    <div className="px-6 py-3">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <p className="min-w-0 flex-1 text-[13px] text-ink-muted">{table.description}</p>
+        <button
+          type="button"
+          aria-expanded={showColumns}
+          onClick={() => setShowColumns((v) => !v)}
+          className="flex cursor-pointer items-center gap-1.5 rounded-lg px-2 py-1 text-[13px] text-ink-muted hover:bg-muted hover:text-ink"
+        >
+          <Info aria-hidden="true" className="size-3.5" />
+          {showColumns ? "Hide column info" : "Column info"}
+        </button>
       </div>
-
-      <h3 className="mt-6 mb-2 text-xs font-semibold tracking-wider text-ink-muted uppercase">
-        First {shown} of {formatCount(table.rowCount)}
-      </h3>
-      <div className="overflow-x-auto rounded-xl border border-line bg-surface">
-        <table className="w-full text-left font-mono text-xs">
-          <thead className="bg-subtle text-ink-muted">
-            <tr>
-              {table.columns.map((column) => (
-                <th key={column.name} scope="col" className="px-3 py-2 font-medium whitespace-nowrap">
-                  {column.name}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {table.previewRows.map((row, i) => (
-              <tr key={i} className="border-t border-line">
-                {row.map((value, j) => (
-                  <td key={j} className="px-3 py-1.5 whitespace-nowrap">
-                    <Cell value={value} />
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </section>
+      {showColumns && <ColumnInfo columns={table.columns} />}
+    </div>
   );
 }
 
-function Cell({ value }: { value: CellValue }) {
-  if (value === null) return <span className="text-ink-faint">NULL</span>;
-  return <>{String(value)}</>;
+function ColumnInfo({ columns }: { columns: SalesColumn[] }) {
+  return (
+    <dl className="mt-3 grid gap-x-6 gap-y-2 rounded-xl border border-line bg-surface p-4 text-[13px] sm:grid-cols-2 lg:grid-cols-3">
+      {columns.map((column) => (
+        <div key={column.name}>
+          <dt>
+            <span className="font-medium">{column.name}</span>{" "}
+            <span className="text-xs text-ink-faint">{column.type}</span>
+          </dt>
+          <dd className="text-ink-muted">{column.description || "—"}</dd>
+        </div>
+      ))}
+    </dl>
+  );
 }
 
-function formatCount(count: number): string {
-  return `${count.toLocaleString("en-US")} ${count === 1 ? "row" : "rows"}`;
+function Pagination({
+  total,
+  offset,
+  limit,
+  onChange,
+  sortLabel,
+}: {
+  total: number;
+  offset: number;
+  limit: number;
+  onChange: (offset: number, limit: number) => void;
+  sortLabel: string | null;
+}) {
+  const first = total === 0 ? 0 : offset + 1;
+  const last = Math.min(offset + limit, total);
+  const pageCount = Math.max(1, Math.ceil(total / limit));
+  const page = Math.floor(offset / limit) + 1;
+  const button =
+    "cursor-pointer rounded-lg border border-line-strong px-3 py-1 text-[13px] hover:bg-subtle disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent";
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-6 py-3 text-[13px] text-ink-muted">
+      <span className="tabular-nums">
+        Rows {first.toLocaleString("en-US")}–{last.toLocaleString("en-US")} of {total.toLocaleString("en-US")}
+        {sortLabel && <> · sorted by {sortLabel}</>}
+      </span>
+      <label className="flex items-center gap-1.5">
+        Rows per page
+        <select
+          value={limit}
+          onChange={(event) => onChange(0, Number(event.target.value))}
+          className="cursor-pointer rounded-md border border-line-strong bg-surface px-1.5 py-0.5 text-ink"
+        >
+          {PAGE_SIZES.map((size) => (
+            <option key={size} value={size}>
+              {size}
+            </option>
+          ))}
+        </select>
+      </label>
+      <div className="ml-auto flex items-center gap-2">
+        <button type="button" className={button} disabled={page <= 1} onClick={() => onChange(0, limit)}>
+          First
+        </button>
+        <button
+          type="button"
+          className={button}
+          disabled={page <= 1}
+          onClick={() => onChange(Math.max(0, offset - limit), limit)}
+        >
+          Previous
+        </button>
+        <span className="tabular-nums">
+          Page {page} of {pageCount}
+        </span>
+        <button
+          type="button"
+          className={button}
+          disabled={page >= pageCount}
+          onClick={() => onChange(offset + limit, limit)}
+        >
+          Next
+        </button>
+        <button
+          type="button"
+          className={button}
+          disabled={page >= pageCount}
+          onClick={() => onChange((pageCount - 1) * limit, limit)}
+        >
+          Last
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ErrorBar({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <div role="alert" className="mx-6 my-3 flex flex-wrap items-center gap-3 text-[13px] text-ink">
+      <span>{message}</span>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="cursor-pointer rounded-lg border border-line-strong px-3 py-1 font-medium hover:bg-subtle"
+      >
+        Try again
+      </button>
+    </div>
+  );
 }

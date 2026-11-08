@@ -50,6 +50,7 @@ class Settings(BaseSettings):
     chat_per_client_per_day: int = Field(default=50, ge=0)
     chat_per_minute: int = Field(default=5, ge=0)
     uploads_per_client_per_hour: int = Field(default=10, ge=0)
+    browse_per_client_per_minute: int = Field(default=60, ge=0)
 
     # Retrieval
     top_k: int = Field(default=4, ge=1, le=20)
