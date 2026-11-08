@@ -48,3 +48,14 @@ def test_min_score_default_depends_on_provider():
 def test_secrets_are_hidden_in_logs():
     settings = Settings(llm_provider="gemini", gemini_api_key="secret-key", _env_file=None)
     assert "secret-key" not in repr(settings)
+
+
+def test_api_root_points_to_the_app_and_docs(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from api.main import create_app
+
+    settings = Settings(cors_origins="http://localhost:3000,https://demo.vercel.app", _env_file=None)
+    body = TestClient(create_app(settings)).get("/").json()
+    assert body["app"] == "https://demo.vercel.app"
+    assert body["docs"] == "/docs"

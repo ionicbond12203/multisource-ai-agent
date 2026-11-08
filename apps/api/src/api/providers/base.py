@@ -33,4 +33,11 @@ class ProviderError(Exception):
 
 
 class ProviderRateLimited(ProviderError):
-    """The provider's quota is used up for now (HTTP 429)."""
+    """The provider's quota is used up for now (HTTP 429). `retry_after` is in seconds, when known."""
+
+    def __init__(self, message: str | None = None, retry_after: int | None = None) -> None:
+        self.retry_after = retry_after
+        if message is None:
+            wait = f"in about {retry_after} seconds" if retry_after else "in a minute"
+            message = f"The free AI quota is used up for the moment. Try again {wait}."
+        super().__init__(message)

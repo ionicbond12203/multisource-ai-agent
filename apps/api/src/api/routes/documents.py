@@ -8,10 +8,11 @@ Document upload and status endpoints.
 
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Request, UploadFile, status
 
 from api.ingestion.extract import SUPPORTED_EXTENSIONS, extension_of
 from api.ingestion.registry import DocumentNotFound, DocumentRecord
+from api.rate_limit import client_key
 from api.schemas import DocumentResponse, Failed, Processing
 from api.services import Services, get_services
 
@@ -23,8 +24,12 @@ READ_BLOCK_BYTES = 1024 * 1024
 
 @router.post("", status_code=status.HTTP_201_CREATED, response_model_exclude_none=True)
 async def upload_document(
-    file: Annotated[UploadFile, File()], services: ServicesDep, background: BackgroundTasks
+    file: Annotated[UploadFile, File()],
+    http: Request,
+    services: ServicesDep,
+    background: BackgroundTasks,
 ) -> DocumentResponse:
+    services.limits.uploads.check(client_key(http))
     name = file.filename or "untitled"
     data = await _read_limited(file, services.settings.max_upload_bytes)
 

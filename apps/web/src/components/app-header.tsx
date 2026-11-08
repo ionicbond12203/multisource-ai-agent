@@ -59,7 +59,7 @@ export function AppHeader({ activeHref, apiMode }: AppHeaderProps) {
             aria-hidden="true"
             className={cn("size-[7px] rounded-full", apiMode === "live" ? "bg-success" : "bg-warning")}
           />
-          {apiMode === "live" ? "Backend connected" : "Sample data (no backend)"}
+          {apiMode === "live" ? "Live backend" : "Sample data (no backend)"}
         </span>
         <a
           href={siteConfig.repoUrl}

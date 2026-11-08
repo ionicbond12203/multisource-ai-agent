@@ -46,6 +46,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def health() -> dict[str, str]:
         return {"status": "ok"}
 
+    # Someone opening the API's address in a browser gets pointers instead of "Not Found".
+    frontend = next((o for o in settings.cors_origins if o.startswith("https://")), None)
+
+    @app.get("/", tags=["meta"])
+    def index() -> dict[str, str | None]:
+        return {
+            "name": "Multisource AI Agent API",
+            "about": "Answers questions from uploaded documents (RAG) and a sample sales database (SQL agent).",
+            "app": frontend,
+            "docs": "/docs",
+            "health": "/health",
+            "source": "https://github.com/ionicbond12203/multisource-ai-agent",
+        }
+
     return app
 
 

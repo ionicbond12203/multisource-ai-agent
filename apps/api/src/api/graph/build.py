@@ -1,18 +1,16 @@
 """
 Wires the nodes into a LangGraph graph and runs it for one question.
 
-    START → router ──(follow-up)──→ rewrite_query ─┐
-              │                                   │
-              ├─ documents ─→ retrieve ─┬─ found ───→ answer ───────────┐
-              │                         └─ nothing ─→ END               ├─→ verify_citations → END
-              ├─ database ──→ generate_sql → run_sql ─┬─ ok ─→ answer_from_data ┘
-              │                     ↑                 ├─ error, retry left ─┐
-              │                     └─────────────────┼─────────────────────┘
-              │                                       └─ error, no retries ─→ END
-              └─ none ─→ END
+    START → router ─┬─ documents ─→ retrieve ─┬─ found ───→ answer ───────────┐
+                    │                         └─ nothing ─→ END               ├─→ verify_citations → END
+                    ├─ database ──→ generate_sql → run_sql ─┬─ ok ─→ answer_from_data ┘
+                    │                     ↑                 ├─ error, retry left ─┐
+                    │                     └─────────────────┼─────────────────────┘
+                    │                                       └─ error, no retries ─→ END
+                    └─ none ─→ END
 
-The router decides between the uploaded documents and the sales database. A
-follow-up first goes through rewrite_query, then takes the same route.
+The router makes one model call that both picks the source (uploaded documents
+or the sales database) and rewrites a follow-up into a standalone question.
 """
 
 import time
@@ -53,7 +51,6 @@ class ChatAgent:
         graph = StateGraph(ChatState)
         for name in (
             "router",
-            "rewrite_query",
             "retrieve",
             "answer",
             "generate_sql",
@@ -66,11 +63,8 @@ class ChatAgent:
         graph.add_edge(START, "router")
         graph.add_conditional_edges(
             "router",
-            _after_router,
-            {"rewrite": "rewrite_query", "documents": "retrieve", "database": "generate_sql", "none": END},
-        )
-        graph.add_conditional_edges(
-            "rewrite_query", lambda s: s["route"], {"documents": "retrieve", "database": "generate_sql"}
+            lambda s: s["route"],
+            {"documents": "retrieve", "database": "generate_sql", "none": END},
         )
 
         graph.add_conditional_edges(
@@ -112,12 +106,6 @@ class ChatAgent:
             follow_ups=[],
             run=AgentRun(steps=result["steps"], total_ms=total_ms),
         )
-
-
-def _after_router(state: ChatState) -> str:
-    if state["route"] == "none":
-        return "none"
-    return "rewrite" if state.get("history") else state["route"]
 
 
 def _after_run_sql(state: ChatState) -> str:

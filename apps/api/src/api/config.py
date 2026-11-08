@@ -44,6 +44,13 @@ class Settings(BaseSettings):
     sql_max_rows: int = Field(default=200, ge=1, le=1000)
     sql_timeout_s: float = Field(default=5.0, gt=0, le=30)
 
+    # Request limits for the public demo (see rate_limit.py). 0 turns a limit off.
+    # The app-wide default keeps questions x 3 model calls within Gemini's free 15 calls/minute.
+    chat_per_client_per_minute: int = Field(default=4, ge=0)
+    chat_per_client_per_day: int = Field(default=50, ge=0)
+    chat_per_minute: int = Field(default=5, ge=0)
+    uploads_per_client_per_hour: int = Field(default=10, ge=0)
+
     # Retrieval
     top_k: int = Field(default=4, ge=1, le=20)
     # Chunks scoring below this are treated as "not found in your files".
