@@ -81,6 +81,19 @@ class Table:
     name: str
     description: str
     columns: tuple[Column, ...]
+    # Primary key columns; the default row order. Empty means the first column.
+    key: tuple[str, ...] = ()
+
+    @property
+    def primary_key(self) -> tuple[str, ...]:
+        return self.key or (self.columns[0].name,)
+
+    def column_names(self) -> list[str]:
+        return [column.name for column in self.columns]
+
+
+def find_table(name: str) -> Table | None:
+    return next((table for table in TABLES if table.name == name), None)
 
 
 # The single description of the data: the model reads it (as DESCRIPTION) to
@@ -154,6 +167,7 @@ TABLES: tuple[Table, ...] = (
             Column("quantity", "integer", "bottles"),
             Column("unit_price_myr", "numeric(10, 2)", "price charged per bottle"),
         ),
+        key=("order_id", "sku"),
     ),
     Table(
         "deliveries",
