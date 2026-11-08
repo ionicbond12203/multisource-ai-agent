@@ -94,3 +94,11 @@ def test_documents_are_embedded_in_batches():
     vectors = embedder.embed_documents([f"chunk {n}" for n in range(MAX_EMBED_BATCH + 5)])
     assert len(vectors) == MAX_EMBED_BATCH + 5
     assert [len(call["contents"]) for call in models.calls] == [MAX_EMBED_BATCH, 5]
+
+
+def test_quota_errors_are_not_retried():
+    # Retrying a 429 within seconds fails again and uses more of the per-minute quota.
+    from api.providers.gemini import RETRY_STATUS_CODES
+
+    assert 429 not in RETRY_STATUS_CODES
+    assert 503 in RETRY_STATUS_CODES

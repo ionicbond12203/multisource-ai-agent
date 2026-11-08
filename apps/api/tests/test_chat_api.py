@@ -6,7 +6,7 @@ from helpers import upload
 from pdf_factory import make_pdf
 
 from api.graph.build import NO_FILES_ANSWER, NOT_FOUND_ANSWER, ChatAgent
-from api.graph.prompts import REWRITE_SYSTEM_PROMPT, ROUTER_SYSTEM_PROMPT
+from api.graph.prompts import ROUTER_SYSTEM_PROMPT
 from api.main import create_app
 from api.providers.base import ProviderRateLimited
 from api.providers.fake import HashingEmbedder
@@ -79,7 +79,7 @@ def test_only_selected_files_are_searched(client):
 
 
 class ScriptedModel:
-    """Chat model stub: fixed replies for rewriting and answering; records every prompt."""
+    """Chat model stub: routes to documents with a fixed rewrite, answers with a fixed text, records prompts."""
 
     def __init__(self, answer: str, rewrite: str = "") -> None:
         self.answer = answer
@@ -88,10 +88,10 @@ class ScriptedModel:
 
     def generate(self, system: str, prompt: str) -> str:
         if system == ROUTER_SYSTEM_PROMPT:
-            return "documents"
-        kind = "rewrite" if system == REWRITE_SYSTEM_PROMPT else "answer"
-        self.prompts[kind] = prompt
-        return self.rewrite if kind == "rewrite" else self.answer
+            self.prompts["router"] = prompt
+            return f"route: documents\nquestion: {self.rewrite}"
+        self.prompts["answer"] = prompt
+        return self.answer
 
 
 class FailingModel:
@@ -126,19 +126,26 @@ HISTORY = [
 ]
 
 
-def test_follow_up_is_rewritten_before_searching(client):
+def test_follow_up_is_rewritten_by_the_router_without_an_extra_step(client):
     file_id = upload_id(client, "sop.pdf", make_pdf(SOP_PAGES))
     body = ask(client, "And during last-mile delivery?", [file_id], HISTORY)
     steps = body["run"]["steps"]
-    assert [step["node"] for step in steps] == [
-        "router",
-        "rewrite_query",
-        "retrieve",
-        "answer",
-        "verify_citations",
-    ]
-    assert steps[1]["summary"].startswith('Follow-up rewritten as "Tell me about chilled RTD tea')
+    # One model call routes and rewrites, so there is no separate rewrite step.
+    assert [step["node"] for step in steps] == ["router", "retrieve", "answer", "verify_citations"]
+    assert steps[0]["summary"].startswith(
+        'Document question → RAG path · read as "Tell me about chilled RTD tea And during'
+    )
     assert body["grounded"] is True
+
+
+def test_first_question_is_searched_as_asked(settings):
+    # Even if the model rephrases a first question, it is not "rewritten".
+    model = ScriptedModel("Between 2 C and 8 C [1].", rewrite="something else entirely")
+    client = client_with_model(settings, model)
+    file_id = upload_id(client, "sop.pdf", make_pdf(SOP_PAGES))
+    body = ask(client, "chilled RTD tea temperature", [file_id])
+    assert body["run"]["steps"][0]["summary"] == "Document question → RAG path"
+    assert body["sources"][0]["location"] == "Page 2 of 2"
 
 
 def test_rewritten_question_is_searched_and_history_reaches_the_answer(settings):
@@ -152,7 +159,7 @@ def test_rewritten_question_is_searched_and_history_reaches_the_answer(settings)
     body = ask(client, "What about it?", [file_id], HISTORY)
 
     assert body["sources"][0]["location"] == "Page 2 of 2"
-    assert "Previous question: Tell me about chilled RTD tea" in model.prompts["rewrite"]
+    assert "Previous question: Tell me about chilled RTD tea" in model.prompts["router"]
     assert "User: Tell me about chilled RTD tea" in model.prompts["answer"]
     assert "Question: What about it?" in model.prompts["answer"]
 
@@ -161,7 +168,8 @@ def test_empty_rewrite_falls_back_to_the_original_question(settings):
     client = client_with_model(settings, ScriptedModel("Between 2 C and 8 C [1].", rewrite=""))
     file_id = upload_id(client, "sop.pdf", make_pdf(SOP_PAGES))
     body = ask(client, "chilled RTD tea temperature", [file_id], HISTORY)
-    assert body["run"]["steps"][1]["summary"] == 'Follow-up rewritten as "chilled RTD tea temperature"'
+    assert body["run"]["steps"][0]["summary"] == "Document question → RAG path"
+    assert body["grounded"] is True
 
 
 def test_unexpected_failure_returns_a_friendly_502(settings):

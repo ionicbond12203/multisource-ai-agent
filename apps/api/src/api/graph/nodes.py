@@ -13,13 +13,12 @@ from api.graph.prompts import (
     ANSWER_SYSTEM_PROMPT,
     CANNOT_ANSWER,
     DATA_ANSWER_SYSTEM_PROMPT,
-    REWRITE_SYSTEM_PROMPT,
     ROUTER_SYSTEM_PROMPT,
     SQL_SYSTEM_PROMPT,
     build_answer_prompt,
-    build_rewrite_prompt,
     build_router_prompt,
     build_sql_prompt,
+    parse_router_reply,
 )
 from api.graph.state import ChatState
 from api.ingestion.extract import extension_of
@@ -60,27 +59,26 @@ class ChatNodes:
     # ---------- routing ----------
 
     def router(self, state: ChatState) -> NodeResult:
+        """
+        One model call that picks the source (documents or the sales database)
+        and turns a follow-up such as "And its temperature?" into a question
+        that can be searched on its own.
+        """
+        question, history = state["question"], state.get("history", [])
         file_count = len(state.get("file_ids", []))
         reply = self.chat_model.generate(
-            ROUTER_SYSTEM_PROMPT, build_router_prompt(state["question"], state.get("history", []), file_count)
+            ROUTER_SYSTEM_PROMPT, build_router_prompt(question, history, file_count)
         )
-        if "database" in reply.lower():
-            return {"route": "database"}, "Data question → SQL path"
+        is_database, standalone = parse_router_reply(reply, question)
+        # Only follow-ups are rewritten; a first question is searched as asked.
+        query = standalone if history else question
+        rewritten = f' · read as "{_shorten(query)}"' if query != question else ""
+
+        if is_database:
+            return {"route": "database", "search_query": query}, f"Data question → SQL path{rewritten}"
         if not file_count:
             return {"route": "none"}, "Document question, but no files selected"
-        return {"route": "documents"}, "Document question → RAG path"
-
-    def rewrite_query(self, state: ChatState) -> NodeResult:
-        """
-        Turns a follow-up such as "And its temperature?" into a question that
-        can be searched on its own. Only runs when there is earlier conversation.
-        """
-        rewritten = self.chat_model.generate(
-            REWRITE_SYSTEM_PROMPT, build_rewrite_prompt(state["question"], state.get("history", []))
-        ).strip()
-        # Guard against a model that rambles: fall back to the original question.
-        query = rewritten.strip('"') if 0 < len(rewritten) <= 500 else state["question"]
-        return {"search_query": query}, f'Follow-up rewritten as "{_shorten(query)}"'
+        return {"route": "documents", "search_query": query}, f"Document question → RAG path{rewritten}"
 
     # ---------- documents path ----------
 

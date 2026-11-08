@@ -6,9 +6,9 @@ fast and repeatable. They are deliberately simple:
 
 - `HashingEmbedder` matches on shared words, not meaning ("car" ≠ "vehicle").
 - `ExtractiveChatModel` copies the best-matching sentence from each source
-  instead of writing a new answer, and rewrites follow-ups by prepending the
-  previous user question. For the sales database it routes on keywords, knows
-  a handful of fixed queries, and summarises the first result row.
+  instead of writing a new answer. The router decides on keywords and rewrites
+  a follow-up by prepending the previous user question. For the sales database
+  it knows a handful of fixed queries and summarises the first result row.
 
 Set LLM_PROVIDER=gemini for semantic search and real answers.
 """
@@ -21,10 +21,8 @@ from collections.abc import Sequence
 from api.graph.prompts import (
     CANNOT_ANSWER,
     DATA_ANSWER_SYSTEM_PROMPT,
-    FOLLOW_UP_LABEL,
     PREVIOUS_QUESTION_LABEL,
     QUESTION_LABEL,
-    REWRITE_SYSTEM_PROMPT,
     ROUTER_SYSTEM_PROMPT,
     SOURCE_HEADER_PATTERN,
     SOURCES_CLOSE,
@@ -75,8 +73,6 @@ class ExtractiveChatModel:
     def generate(self, system: str, prompt: str) -> str:
         if system == ROUTER_SYSTEM_PROMPT:
             return _route(prompt)
-        if system == REWRITE_SYSTEM_PROMPT:
-            return _rewrite(prompt)
         if system == SQL_SYSTEM_PROMPT:
             return _write_sql(prompt)
         if system == DATA_ANSWER_SYSTEM_PROMPT:
@@ -140,13 +136,17 @@ group by 1 order by 1"""
 
 
 def _route(prompt: str) -> str:
-    question = _find_line(prompt, QUESTION_LABEL).lower()
-    return "database" if any(phrase in question for phrase in _DATA_PHRASES) else "documents"
+    """Routes on keywords; a follow-up is "rewritten" by prepending the previous question."""
+    question = _find_line(prompt, QUESTION_LABEL)
+    previous = _find_line(prompt, PREVIOUS_QUESTION_LABEL)
+    standalone = f"{previous} {question}".strip() if previous else question
+    is_data = any(phrase in standalone.lower() for phrase in _DATA_PHRASES)
+    return f"route: {'database' if is_data else 'documents'}\nquestion: {standalone}"
 
 
 def _write_sql(prompt: str) -> str:
     question = _find_line(prompt, QUESTION_LABEL).lower()
-    quarter_match = re.search(r"q([1-4])", question)
+    quarter_match = re.search(r"\bq([1-4])\b", question)
     quarter = f" and extract(quarter from o.order_date) = {quarter_match.group(1)}" if quarter_match else ""
     if "late" in question:
         template = _LATE_BY_STATE
@@ -173,13 +173,6 @@ def _summarise_result(prompt: str) -> str:
     columns, first = lines[1].split(" | "), lines[2].split(" | ")
     top = ", ".join(f"{column} = {value}" for column, value in zip(columns, first, strict=False))
     return f"The query returned {lines[0]}. The first row is {top} [1]."
-
-
-def _rewrite(prompt: str) -> str:
-    """Joins the previous user question and the follow-up, so shared words still match."""
-    previous = _find_line(prompt, PREVIOUS_QUESTION_LABEL)
-    follow_up = _find_line(prompt, FOLLOW_UP_LABEL)
-    return f"{previous} {follow_up}".strip()
 
 
 def _find_line(prompt: str, label: str) -> str:

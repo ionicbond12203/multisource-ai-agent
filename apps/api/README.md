@@ -68,8 +68,7 @@ Two test files skip themselves unless configured: `test_postgres.py` needs `TEST
 `POST /chat` runs a LangGraph graph (`src/api/graph/build.py`):
 
 ```
-START → router ──(follow-up)──→ rewrite_query ─┐  (then the same route)
-          │
+START → router
           ├─ documents ─→ retrieve ─┬─ found ───→ answer ─────────────────────┐
           │                         └─ nothing ─→ END  ("not found")          ├─→ verify_citations → END
           ├─ database ──→ generate_sql → run_sql ─┬─ ok ──→ answer_from_data ─┘
@@ -79,16 +78,15 @@ START → router ──(follow-up)──→ rewrite_query ─┐  (then the same
           └─ none ─→ END  ("no files selected")
 ```
 
-| Node               | Job                                                                                           |
-| ------------------ | --------------------------------------------------------------------------------------------- |
-| `router`           | Asks the model: is this about the uploaded documents or the sales database?                   |
-| `rewrite_query`    | Only for follow-ups: turns "And its temperature?" into a question that stands on its own.     |
-| `retrieve`         | Embeds the question, searches only the selected files, drops low-scoring chunks.              |
-| `answer`           | Numbers the chunks as sources [1], [2] … and asks the chat model to answer with citations.    |
-| `generate_sql`     | Writes one PostgreSQL query from the schema description. On a retry it sees its last error.   |
-| `run_sql`          | Checks the SQL with the guard, then runs it read-only. A rejection or error is a failed step. |
-| `answer_from_data` | Answers from the query result, which becomes source [1] (`kind: "sql"`).                      |
-| `verify_citations` | Removes citations that match no source and sets `grounded`.                                   |
+| Node               | Job                                                                                                                                       |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `router`           | One model call: documents or sales database? For a follow-up, also restates it on its own ("And in July?" → "…excursions in July 2026?"). |
+| `retrieve`         | Embeds the question, searches only the selected files, drops low-scoring chunks.                                                          |
+| `answer`           | Numbers the chunks as sources [1], [2] … and asks the chat model to answer with citations.                                                |
+| `generate_sql`     | Writes one PostgreSQL query from the schema description. On a retry it sees its last error.                                               |
+| `run_sql`          | Checks the SQL with the guard, then runs it read-only. A rejection or error is a failed step.                                             |
+| `answer_from_data` | Answers from the query result, which becomes source [1] (`kind: "sql"`).                                                                  |
+| `verify_citations` | Removes citations that match no source and sets `grounded`.                                                                               |
 
 ## The sales database (SQL agent)
 
@@ -199,9 +197,25 @@ To add a provider: implement `Embedder` and `ChatModel`, add a case to `build_pr
 | Add a node to the graph                  | A method in `graph/nodes.py`, then wire it in `graph/build.py` |
 | Support another file type                | `ingestion/extract.py` (`SUPPORTED_EXTENSIONS` and a reader)   |
 
+## Running as a free public demo
+
+Gemini's free tier allows 15 model calls a minute for the whole app. A document question takes 2 calls
+(router, answer) and a data question 3 (router, SQL, answer), so the API protects that budget:
+
+| Protection              | Where                 | Default                                                      |
+| ----------------------- | --------------------- | ------------------------------------------------------------ |
+| Per-visitor limits      | `rate_limit.py`       | 4 questions a minute, 50 a day; 10 uploads an hour           |
+| App-wide question limit | `rate_limit.py`       | 5 questions a minute (5 × 3 calls = 15)                      |
+| No retries on quota 429 | `providers/gemini.py` | Only 5xx and timeouts are retried; a 429 is reported at once |
+
+Limited requests get HTTP 429 with a `Retry-After` header and a message saying how long to wait, which the
+frontend shows. Counters are in memory, which suits the single free Render instance; several instances would
+need a shared store such as Redis. Change the limits with the variables in `.env.example`.
+
+The free Render instance sleeps after about 15 idle minutes, and the first request then takes up to a minute.
+The frontend polls `GET /health` on load and shows a "waking up" notice meanwhile.
+
 ## Not built yet
 
 - Guardrails: PII masking and prompt-injection checks (step 4)
-- OCR for scanned PDFs, deleting old uploads, rate limiting
-- Fewer model calls per question: each one takes 3 to 4, so the free Gemini tier allows only a few questions a
-  minute
+- OCR for scanned PDFs, deleting old uploads

@@ -9,6 +9,7 @@ sensitive to a public demo.
 
 import logging
 import math
+import re
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 
@@ -21,14 +22,27 @@ logger = logging.getLogger(__name__)
 
 # The API accepts up to 100 texts per embedding request.
 MAX_EMBED_BATCH = 100
-RATE_LIMITED_MESSAGE = "The free AI quota is used up for the moment. Wait a minute and try again."
 UNAVAILABLE_MESSAGE = "The AI service is unavailable right now. Try again shortly."
+
+# Only temporary server errors are worth retrying at once. A 429 means the
+# per-minute quota is used up; retrying within seconds fails again and every
+# attempt counts against the quota, so it is reported to the user instead.
+RETRY_STATUS_CODES = [408, 500, 502, 503, 504]
+# Gemini's 429 message says e.g. "Please retry in 41.67s."
+_RETRY_IN = re.compile(r"retry in ([\d.]+)\s*s", re.IGNORECASE)
 
 
 def create_client(api_key: str) -> genai.Client:
-    # Retries 429 and 5xx responses with exponential backoff before giving up.
-    retry = types.HttpRetryOptions(attempts=3, initial_delay=1.0, max_delay=8.0)
+    retry = types.HttpRetryOptions(
+        attempts=3, initial_delay=1.0, max_delay=8.0, http_status_codes=RETRY_STATUS_CODES
+    )
     return genai.Client(api_key=api_key, http_options=types.HttpOptions(retry_options=retry, timeout=60_000))
+
+
+def rate_limited(error: Exception) -> ProviderRateLimited:
+    match = _RETRY_IN.search(str(error))
+    seconds = math.ceil(float(match.group(1))) if match else None
+    return ProviderRateLimited(retry_after=seconds)
 
 
 class GeminiChatModel:
@@ -90,7 +104,9 @@ def _translate_errors() -> Iterator[None]:
     try:
         yield
     except errors.APIError as error:
-        logger.warning("Gemini API error %s: %s", error.code, error)
         if error.code == 429:
-            raise ProviderRateLimited(RATE_LIMITED_MESSAGE) from error
+            limited = rate_limited(error)
+            logger.warning("Gemini quota used up; retry after %s s", limited.retry_after)
+            raise limited from error
+        logger.warning("Gemini API error %s: %s", error.code, error)
         raise ProviderError(UNAVAILABLE_MESSAGE) from error

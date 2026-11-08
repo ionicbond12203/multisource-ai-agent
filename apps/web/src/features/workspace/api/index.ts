@@ -8,7 +8,8 @@ export * from "./types";
  * Picks the real backend when NEXT_PUBLIC_API_URL is set (see .env.example),
  * otherwise the in-browser mocks.
  */
-const apiUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/+$/, "");
+/** Backend base URL from NEXT_PUBLIC_API_URL, without a trailing slash; undefined in sample-data mode. */
+export const apiUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/+$/, "");
 
 export const isUsingMockApi = !apiUrl;
 
